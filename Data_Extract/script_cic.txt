@@ -1,0 +1,4 @@
+mkdir -p /mnt/Users/hoang/Documents/Dataset_KLTN/gotham2025_extracted/benign/
+for pcap in /mnt/Users/hoang/Documents/Dataset_KLTN/raw/benign/*.pcap; do
+    java -jar /mnt/c/Users/hoang/Code/CICFlowMeter/target/CICFlowMeterV3-0.0.4-SNAPSHOT.jar "$pcap" /mnt/Users/hoang/Documents/Dataset_KLTN/gotham2025_extracted/benign/
+done
