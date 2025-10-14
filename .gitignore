@@ -2,4 +2,5 @@
 *.csv
 *.log
 *.Identifier
-*.vscode
+.vscode
+.ipynb_checkpoints
