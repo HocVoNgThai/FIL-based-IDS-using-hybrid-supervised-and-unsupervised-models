@@ -40,4 +40,4 @@ mvn install:install-file -Dfile=./jnetpcap/linux/jnetpcap-1.4.r1425/jnetpcap.jar
 
 Sau khi đã có file jar, có thể dùng GUI để convert .pcap sang .csv, chọn tab `Offline` tại `Network`:
 
-![CICFLOWMETER](image.png)
+<p align = "center"> ![CICFLOWMETER](image.png) </p>
