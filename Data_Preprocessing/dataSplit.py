@@ -7,14 +7,7 @@ def create_training_and_evaluation_sets(
     training_output_path: str = 'unsupervised_training_dataset.csv',
     evaluation_output_path: str = 'evaluation_dataset.csv'
 ):
-    """
-    Tạo bộ dữ liệu huấn luyện và đánh giá từ các file Parquet.
 
-    Args:
-        folder_path (str): Thư mục chứa các file Parquet.
-        training_output_path (str): Tên file CSV cho dữ liệu huấn luyện.
-        evaluation_output_path (str): Tên file CSV cho dữ liệu đánh giá.
-    """
     try:
         # --- Bước 1: Đọc và gộp tất cả dữ liệu từ thư mục Parquet ---
         search_pattern = os.path.join(folder_path, '*.parquet')
