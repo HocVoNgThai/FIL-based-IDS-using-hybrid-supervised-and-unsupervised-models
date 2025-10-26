@@ -128,15 +128,18 @@ public class BasicFlow {
 		this.endActiveTime = packet.getTimeStamp();
 		this.flowLengthStats.addValue((double)packet.getPayloadBytes());
 
-		if(this.src==null){
+		if(this.src==null)
+		{
 			this.src = packet.getSrc();
 			this.srcPort = packet.getSrcPort();
 		}
-		if(this.dst==null){
+		if(this.dst==null)
+		{
 			this.dst = packet.getDst();
 			this.dstPort = packet.getDstPort();
 		}		
-		if(Arrays.equals(this.src, packet.getSrc())){
+		if(Arrays.equals(this.src, packet.getSrc()))
+		{
 			this.min_seg_size_forward = packet.getHeaderBytes();
 			Init_Win_bytes_forward = packet.getTCPWindow();
 			this.flowLengthStats.addValue((double)packet.getPayloadBytes());
@@ -145,13 +148,18 @@ public class BasicFlow {
 			this.forwardLastSeen = packet.getTimeStamp();
 			this.forwardBytes+=packet.getPayloadBytes();
 			this.forward.add(packet);
-			if(packet.hasFlagPSH()){
+
+			if(packet.hasFlagPSH())
+			{
 				this.fPSH_cnt++;
 			}
-			if(packet.hasFlagURG()){
+			if(packet.hasFlagURG())
+			{
 				this.fURG_cnt++;
 			}
-		}else{
+		}
+		else
+		{
 			Init_Win_bytes_backward = packet.getTCPWindow();
 			this.flowLengthStats.addValue((double)packet.getPayloadBytes());
 			this.bwdPktStats.addValue((double)packet.getPayloadBytes());
@@ -159,6 +167,7 @@ public class BasicFlow {
 			this.backwardLastSeen = packet.getTimeStamp();
 			this.backwardBytes+=packet.getPayloadBytes();
 			this.backward.add(packet);
+
 			if(packet.hasFlagPSH()){
 				this.bPSH_cnt++;
 			}
@@ -166,16 +175,21 @@ public class BasicFlow {
 				this.bURG_cnt++;
 			}
 		}
+
 		this.protocol = packet.getProtocol();
 		this.flowId = packet.getFlowId();		
+
 	}
     
     public void addPacket(BasicPacketInfo packet){
 		updateFlowBulk(packet);
 		detectUpdateSubflows(packet);
 		checkFlags(packet);
+
     	long currentTimestamp = packet.getTimeStamp();
-    	if(isBidirectional){
+
+    	if(isBidirectional)
+		{
 			this.flowLengthStats.addValue((double)packet.getPayloadBytes());
 
     		if(Arrays.equals(this.src, packet.getSrc())){
@@ -202,7 +216,8 @@ public class BasicFlow {
     			this.backwardLastSeen = currentTimestamp;
     		}
     	}
-		else{
+		else
+		{
 			if(packet.getPayloadBytes() >=1) {
 				this.Act_data_pkt_forward++;
 			}
@@ -494,7 +509,6 @@ public class BasicFlow {
 	public double fbulkDurationInSecond() {
 		return fbulkDuration/(double)1000000;
 	}
-
 
 
 	//Client average bytes per bulk

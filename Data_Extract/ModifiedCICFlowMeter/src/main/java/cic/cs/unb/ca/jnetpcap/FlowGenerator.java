@@ -76,152 +76,169 @@ public class FlowGenerator {
         
     	BasicFlow   flow;
     	long        currentTimestamp = packet.getTimeStamp();
-		    String id;
+		String		id;
 
     	if(this.currentFlows.containsKey(packet.fwdFlowId())||this.currentFlows.containsKey(packet.bwdFlowId())){
 	
-	if(this.currentFlows.containsKey(packet.fwdFlowId())) 
-		{id = packet.fwdFlowId();}
-    		else {
-		id = packet.bwdFlowId();}
+			if(this.currentFlows.containsKey(packet.fwdFlowId()))
+				id = packet.fwdFlowId();
+			else 
+				id = packet.bwdFlowId();
+			
+			flow = currentFlows.get(id);
+			// Flow finished due flowtimeout: 
+			// 1.- we move the flow to finished flow list
+			// 2.- we eliminate the flow from the current flow list
+			// 3.- we create a new flow with the packet-in-process
 
-    		flow = currentFlows.get(id);
-    		// Flow finished due flowtimeout: 
-    		// 1.- we move the flow to finished flow list
-    		// 2.- we eliminate the flow from the current flow list
-    		// 3.- we create a new flow with the packet-in-process
-    		if((currentTimestamp -flow.getFlowStartTime())>flowTimeOut){
-    			if(flow.packetCount()>1){
+			if((currentTimestamp - flow.getFlowStartTime()) > flowTimeOut){
+				if(flow.packetCount()>1){
 					if (mListener != null) {
 						mListener.onFlowGenerated(flow);
-					    }
-					else{
-                                                finishedFlows.put(getFlowCount(), flow);
-                                            }
-                    //flow.endActiveIdleTime(currentTimestamp,this.flowActivityTimeOut, this.flowTimeOut, false);
-    			}
-    			currentFlows.remove(id);    			
-				currentFlows.put(id, new BasicFlow(bidirectional,packet,flow.getSrc(),flow.getDst(),flow.getSrcPort(),flow.getDstPort(), this.flowActivityTimeOut));
-    			
-    			int cfsize = currentFlows.size();
-    			if(cfsize%50==0) {
-    				logger.debug("Timeout current has {} flow",cfsize);
-    	    	}
-    			
-//        	// Flow finished due FIN flag (tcp only):
-//    		// 1.- we add the packet-in-process to the flow (it is the last packet)
-//        	// 2.- we move the flow to finished flow list
-//        	// 3.- we eliminate the flow from the current flow list   	
-//    		}else if(packet.hasFlagFIN()){
-//    	    	logger.debug("FlagFIN current has {} flow",currentFlows.size());
-//    	    	flow.addPacket(packet);
-//                if (mListener != null) {
-//                    mListener.onFlowGenerated(flow);
-//                } else {
-//                    finishedFlows.put(getFlowCount(), flow);
-//                }
-//                currentFlows.remove(id);
-    		}else if(packet.hasFlagFIN()){
-    			//
-    			// Forward Flow
-    			//
-    			if (Arrays.equals(flow.getSrc(), packet.getSrc())) {
-    				// How many forward FIN received? 
-    				if (flow.setFwdFINFlags() == 1) {
-    		        	// Flow finished due FIN flag (tcp only)?:
-    		    		// 1.- we add the packet-in-process to the flow (it is the last packet)
-    		        	// 2.- we move the flow to finished flow list
-    		        	// 3.- we eliminate the flow from the current flow list       					
-    					if ((flow.getBwdFINFlags() + flow.getBwdFINFlags()) == 2) {
-    		    	    	logger.debug("FlagFIN current has {} flow",currentFlows.size());
-    		    	    	flow.addPacket(packet);
-    		                if (mListener != null) {
-    		                    mListener.onFlowGenerated(flow);
-    		                } else {
-    		                    finishedFlows.put(getFlowCount(), flow);
-    		                }
-    		                currentFlows.remove(id);
-    		            // Forward Flow Finished.
-    					} else {
-    						logger.info("Forward flow closed due to FIN Flag");
-    		    			flow.updateActiveIdleTime(currentTimestamp,this.flowActivityTimeOut);
-    		    			flow.addPacket(packet);
-    		    			currentFlows.put(id,flow);    						
-    					}
-    				}else{
-    					// some error
-    					// TODO: review what to do with the packet
-    					logger.warn("Forward flow received {} FIN packets", flow.getFwdFINFlags());
-    				}
-    		    //
-    			// Backward Flow
-    		    //
-    			} else {    				
-    				// How many backward FIN packets received?
-    				if (flow.setBwdFINFlags() == 1) {
-    		        	// Flow finished due FIN flag (tcp only)?:
-    		    		// 1.- we add the packet-in-process to the flow (it is the last packet)
-    		        	// 2.- we move the flow to finished flow list
-    		        	// 3.- we eliminate the flow from the current flow list       					
-    					if ((flow.getBwdFINFlags() + flow.getBwdFINFlags()) == 2) {
-    		    	    	logger.debug("FlagFIN current has {} flow",currentFlows.size());
-    		    	    	flow.addPacket(packet);
-    		                if (mListener != null) {
-    		                    mListener.onFlowGenerated(flow);
-    		                } else {
-    		                    finishedFlows.put(getFlowCount(), flow);
-    		                }
-    		                currentFlows.remove(id);
-    		            // Backward Flow Finished.
-    					} else {
-    						logger.info("Backwards flow closed due to FIN Flag");
-    		    			flow.updateActiveIdleTime(currentTimestamp,this.flowActivityTimeOut);
-    		    			flow.addPacket(packet);
-    		    			currentFlows.put(id,flow);    						
-    					}
-    				}else{
-    					// some error
-    					// TODO: review what to do with the packet
-    					logger.warn("Backward flow received {} FIN packets", flow.getBwdFINFlags());    					
-    				}    				
+					} else{
+						finishedFlows.put(getFlowCount(), flow);
+					}
+					//flow.endActiveIdleTime(currentTimestamp,this.flowActivityTimeOut, this.flowTimeOut, false);
+				}
+			
+			currentFlows.remove(id);    			
+			currentFlows.put(id, new BasicFlow(bidirectional,packet,flow.getSrc(),flow.getDst(),flow.getSrcPort(),flow.getDstPort(), this.flowActivityTimeOut));
+			
+			int cfsize = currentFlows.size();
+			if(cfsize%50==0)
+				logger.debug("Timeout current has {} flow",cfsize);
+					
+			//        	// Flow finished due FIN flag (tcp only):
+			//    		// 1.- we add the packet-in-process to the flow (it is the last packet)
+			//        	// 2.- we move the flow to finished flow list
+			//        	// 3.- we eliminate the flow from the current flow list   	
+			//    		}else if(packet.hasFlagFIN()){
+			//    	    	logger.debug("FlagFIN current has {} flow",currentFlows.size());
+			//    	    	flow.addPacket(packet);
+			//                if (mListener != null) {
+			//                    mListener.onFlowGenerated(flow);
+			//                } else {
+			//                    finishedFlows.put(getFlowCount(), flow);
+			//                }
+			//                currentFlows.remove(id);
+			
+			} else if (packet.hasFlagFIN()) {
+					//
+					// Forward Flow
+					//
+				if (Arrays.equals(flow.getSrc(), packet.getSrc())) {
+					// How many forward FIN received? 
+					if (flow.setFwdFINFlags() == 1) {
+						// Flow finished due FIN flag (tcp only)?:
+						// 1.- we add the packet-in-process to the flow (it is the last packet)
+						// 2.- we move the flow to finished flow list
+						// 3.- we eliminate the flow from the current flow list       					
+						if ((flow.getBwdFINFlags() + flow.getBwdFINFlags()) == 2) {
+							logger.debug("FlagFIN current has {} flow",currentFlows.size());
+							flow.addPacket(packet);
+							if (mListener != null) {
+								mListener.onFlowGenerated(flow);
+							} else {
+								finishedFlows.put(getFlowCount(), flow);
+							}
+							currentFlows.remove(id);
+						// Forward Flow Finished.
+						} else {
+							logger.info("Forward flow closed due to FIN Flag");
+							flow.updateActiveIdleTime(currentTimestamp,this.flowActivityTimeOut);
+							flow.addPacket(packet);
+							currentFlows.put(id,flow);    						
+						}
+					}else{
+						// some error
+						// TODO: review what to do with the packet
+						logger.warn("Forward flow received {} FIN packets", flow.getFwdFINFlags());
+					}
+					//
+					// Backward Flow
+					//
+
+				} else {    				
+					// How many backward FIN packets received?
+					if (flow.setBwdFINFlags() == 1) {
+						// Flow finished due FIN flag (tcp only)?:
+						// 1.- we add the packet-in-process to the flow (it is the last packet)
+						// 2.- we move the flow to finished flow list
+						// 3.- we eliminate the flow from the current flow list       					
+						if ((flow.getBwdFINFlags() + flow.getBwdFINFlags()) == 2) {
+							logger.debug("FlagFIN current has {} flow",currentFlows.size());
+							flow.addPacket(packet);
+							if (mListener != null) {
+								mListener.onFlowGenerated(flow);
+							} else {
+								finishedFlows.put(getFlowCount(), flow);
+							}
+							currentFlows.remove(id);
+						// Backward Flow Finished.
+						} else {
+							logger.info("Backwards flow closed due to FIN Flag");
+							flow.updateActiveIdleTime(currentTimestamp,this.flowActivityTimeOut);
+							flow.addPacket(packet);
+							currentFlows.put(id,flow);    						
+						}
+					} else {
+						// some error
+						// TODO: review what to do with the packet
+						logger.warn("Backward flow received {} FIN packets", flow.getBwdFINFlags());    					
+					}    				
     			}
         	// Flow finished due RST flag (tcp only):
     		// 1.- we add the packet-in-process to the flow (it is the last packet)
         	// 2.- we move the flow to finished flow list
-        	// 3.- we eliminate the flow from the current flow list                
-    		}else if(packet.hasFlagRST()){
-    			logger.debug("FlagRST current has {} flow",currentFlows.size());
+        	// 3.- we eliminate the flow from the current flow list  
+
+    		} 
+			else if(packet.hasFlagRST()) 
+			{
+    			
+				logger.debug("FlagRST current has {} flow",currentFlows.size());
     			flow.addPacket(packet);
-                if (mListener != null) {
+                
+				if (mListener != null) {
                     mListener.onFlowGenerated(flow);
                 } else {
                     finishedFlows.put(getFlowCount(), flow);
                 }
-                currentFlows.remove(id);    			
-    		}else{
+                currentFlows.remove(id);
+    		}
+
+			else
+			{
     			//
     			// Forward Flow and fwdFIN = 0
     			//
-    			if (Arrays.equals(flow.getSrc(), packet.getSrc()) && (flow.getFwdFINFlags() == 0)) {
+    			if (Arrays.equals(flow.getSrc(), packet.getSrc()) && (flow.getFwdFINFlags() == 0)) 
+				{
         			flow.updateActiveIdleTime(currentTimestamp,this.flowActivityTimeOut);
         			flow.addPacket(packet);
         			currentFlows.put(id,flow);
     			// 
     			// Backward Flow and bwdFIN = 0
     			//    				
-    			} else if (flow.getBwdFINFlags() == 0) {
+    			} 
+				else if (flow.getBwdFINFlags() == 0) 
+				{
         			flow.updateActiveIdleTime(currentTimestamp,this.flowActivityTimeOut);
         			flow.addPacket(packet);
         			currentFlows.put(id,flow);
         		//
         		// FLOW already closed!!!
         		//
-    			} else {
+    			} 
+				else 
+				{
     				logger.warn("FLOW already closed! fwdFIN {} bwdFIN {}", flow.getFwdFINFlags(), flow.getBwdFINFlags());
     				// TODO: we just discard the packet?
     			}
     		}
-    	}else{
+    	} 
+		else
+		{
 			currentFlows.put(packet.fwdFlowId(), new BasicFlow(bidirectional,packet, this.flowActivityTimeOut));
     	}
     }

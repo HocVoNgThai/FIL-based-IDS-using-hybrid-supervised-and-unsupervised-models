@@ -403,7 +403,7 @@ public class FlowOfflinePane extends JPanel{
                     flowCnt.put(curFile, 0L);
 
                 } else if (ReadPcapFileWorker.PROPERTY_FLOW.equalsIgnoreCase(evt.getPropertyName())) {
-                    logger.info("Flow Offline Pane File - Flow To CSV: -> {}", evt.getNewValue());
+                    // logger.info("Flow Offline Pane File - Flow To CSV: -> {}", evt.getNewValue());
 
                     String fileName = (String) evt.getOldValue();
                     BasicFlow flow = (BasicFlow) evt.getNewValue();

@@ -161,8 +161,8 @@ public class ReadPcapFileWorker extends SwingWorker<List<String>,String> {
         
         PacketReader packetReader = new PacketReader(inputFile, readIP4, readIP6);
 
-        publish(String.format("Working on... %s",inputFile));
-        logger.info("ReadPcap FileWorker File - Func readPcap File - Working on... {}\n", inputFile);
+        publish(String.format("Working on... %s and Output File %s",inputFile, saveFileFullPath));
+        logger.info("ReadPcap FileWorker File - Func readPcap File - Working on... {} - \n OutputPath: \n", inputFile, saveFileFullPath);
         
         int nValid=0;
         int nTotal=0;
