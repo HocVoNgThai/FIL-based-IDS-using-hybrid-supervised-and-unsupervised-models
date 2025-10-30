@@ -45,3 +45,51 @@ Sau khi đã có file jar, có thể dùng GUI để convert .pcap sang .csv, ch
 <img width="729" height="751" src="https://github.com/HocVoNgThai/FIL-based-IDS-using-hybrid-supervised-and-unsupervised-models/blob/main/image.png">
 </p>
 
+     ┌──────────────────────────────────────────────────────────────┐
+     │                       Offline Training                       │
+     │  Raw data → bAE → latent features → OCSVM / AE / XGBoost     │
+     └──────────────────────────────────────────────────────────────┘
+                           ↓ (Online Detection)
+     ┌──────────────────────────────────────────────────────────────┐
+     │ New batch → bAE.encode() →                                   │
+     │   ├── OCSVM → detect outlier                                 │
+     │   ├── AE → reconstruction error                              │
+     │   ├── XGBoost → predict known attack                         │
+     │   └── if unknown → Buffer unknown samples                    │
+     └──────────────────────────────────────────────────────────────┘
+                           ↓ (Incremental Loop)
+     ┌──────────────────────────────────────────────────────────────┐
+     │ Cluster unknown (MiniBatchKMeans)                            │
+     │ → Analyst labeling                                           │
+     │ → Incremental fine-tune:                                     │
+     │     - bAE: fine-tune + EWC regularization                    │
+     │     - OCSVM: retrain subset -> Có thể thay bằng Isolation Forest 
+                          hoặc train lại với                            │
+     │     - AE: fine-tune replay + EWC                             │
+     │     - XGBoost: incremental fit (xgb_model param)             │
+     └──────────────────────────────────────────────────────────────┘
+
+
+     ┌──────────────────────────────────────────────────────────────┐
+     │                       Offline Training                       │
+     │  Raw data → bAE → latent features → OCSVM / AE / XGBoost     │
+     └──────────────────────────────────────────────────────────────┘
+                           ↓ (Online Detection)
+     ┌──────────────────────────────────────────────────────────────┐
+     │ New sample/packet → bAE.encode()                             │
+     │   ├── OCSVM → detect outlier                                 │
+     │   ├── AE                                                     │
+     │   ├── XGBoost                                                │
+     │   └── All samples are saved to pcap file per hour            │
+     └──────────────────────────────────────────────────────────────┘
+                           ↓ (Incremental Loop)
+     ┌──────────────────────────────────────────────────────────────┐
+     │ New batch                                                    │
+     │ → Analyst labeling                                           │
+     │ → Incremental fine-tune:                                     │
+     │     - bAE: fine-tune + EWC regularization                    │
+     │     - OCSVM: retrain subset                                  │
+     │     - AE: fine-tune replay + EWC                             │
+     │     - XGBoost: incremental fit (xgb_model param)             │
+     └──────────────────────────────────────────────────────────────┘
+

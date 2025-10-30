@@ -134,7 +134,7 @@ public class FlowGenerator {
 						// 2.- we move the flow to finished flow list
 						// 3.- we eliminate the flow from the current flow list       					
 						if ((flow.getBwdFINFlags() + flow.getBwdFINFlags()) == 2) {
-							logger.debug("FlagFIN current has {} flow",currentFlows.size());
+							// logger.debug("FlagFIN current has {} flow",currentFlows.size());
 							flow.addPacket(packet);
 							if (mListener != null) {
 								mListener.onFlowGenerated(flow);
@@ -144,7 +144,7 @@ public class FlowGenerator {
 							currentFlows.remove(id);
 						// Forward Flow Finished.
 						} else {
-							logger.info("Forward flow closed due to FIN Flag");
+							// logger.info("Forward flow closed due to FIN Flag");
 							flow.updateActiveIdleTime(currentTimestamp,this.flowActivityTimeOut);
 							flow.addPacket(packet);
 							currentFlows.put(id,flow);    						
@@ -152,7 +152,7 @@ public class FlowGenerator {
 					}else{
 						// some error
 						// TODO: review what to do with the packet
-						logger.warn("Forward flow received {} FIN packets", flow.getFwdFINFlags());
+						logger.debug("Forward flow received {} FIN packets", flow.getFwdFINFlags());
 					}
 					//
 					// Backward Flow
@@ -176,7 +176,7 @@ public class FlowGenerator {
 							currentFlows.remove(id);
 						// Backward Flow Finished.
 						} else {
-							logger.info("Backwards flow closed due to FIN Flag");
+							// logger.info("Backwards flow closed due to FIN Flag");
 							flow.updateActiveIdleTime(currentTimestamp,this.flowActivityTimeOut);
 							flow.addPacket(packet);
 							currentFlows.put(id,flow);    						
@@ -184,7 +184,7 @@ public class FlowGenerator {
 					} else {
 						// some error
 						// TODO: review what to do with the packet
-						logger.warn("Backward flow received {} FIN packets", flow.getBwdFINFlags());    					
+						logger.debug("Backward flow received {} FIN packets", flow.getBwdFINFlags());    					
 					}    				
     			}
         	// Flow finished due RST flag (tcp only):
@@ -232,7 +232,7 @@ public class FlowGenerator {
     			} 
 				else 
 				{
-    				logger.warn("FLOW already closed! fwdFIN {} bwdFIN {}", flow.getFwdFINFlags(), flow.getBwdFINFlags());
+    				logger.debug("FLOW already closed! fwdFIN {} bwdFIN {}", flow.getFwdFINFlags(), flow.getBwdFINFlags());
     				// TODO: we just discard the packet?
     			}
     		}

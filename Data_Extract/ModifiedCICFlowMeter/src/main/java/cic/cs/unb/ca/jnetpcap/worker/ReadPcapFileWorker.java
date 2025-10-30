@@ -8,10 +8,13 @@ import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static cic.cs.unb.ca.jnetpcap.Utils.*;
 
@@ -41,8 +44,8 @@ public class ReadPcapFileWorker extends SwingWorker<List<String>,String> {
         if(!outPutDirectory.endsWith(FILE_SEP)) {
             outPutDirectory = outPutDirectory + FILE_SEP;
         }
-        flowTimeout = 120000000L;
-        activityTimeout = 5000000L;
+        flowTimeout = 360000L;
+        activityTimeout = 120000000L; // 5000000L;
     }
 
     public ReadPcapFileWorker(File inputFile, String outPutDir,long param1,long param2) {
@@ -58,7 +61,9 @@ public class ReadPcapFileWorker extends SwingWorker<List<String>,String> {
 
             flowTimeout = param1;
             activityTimeout = param2;
+
             logger.info("Read Pcap File Worker File - Successfully Inited ");
+
         } catch (ClassCastException | NumberFormatException e) {
             logger.info("Read Pcap File Worker File - Error: {} \t {}", e.getMessage(), e.getClass());
         }
@@ -100,6 +105,28 @@ public class ReadPcapFileWorker extends SwingWorker<List<String>,String> {
         super.done();
     }
 
+    private List<File> findAllPcapFiles(File pcapPath){
+        List<File> pcapFiles = new ArrayList<>();
+
+        String FILE_EXTENSION = ".pcap";
+        Path startDir = Paths.get(pcapPath.toString());
+
+        System.out.println("Đang tìm kiếm file " + FILE_EXTENSION + " trong thư mục: " + startDir);
+
+        try {
+            // Files.walk() thực hiện duyệt đệ quy
+            try (Stream<Path> stream = Files.walk(startDir)) {
+                stream
+                    .filter(Files::isRegularFile) // Lọc chỉ giữ lại các file thông thường
+                    .filter(path -> path.toString().toLowerCase().endsWith(FILE_EXTENSION)) // Lọc theo đuôi .pcap (không phân biệt chữ hoa/thường)
+                    .forEach(path -> pcapFiles.add(path.toFile()) );
+            }
+        } catch (IOException e) {
+            logger.info("[E] Lỗi khi duyệt thư mục: " + e.getMessage());
+        }
+        return pcapFiles;
+    }
+
     @Override
     protected void process(List<String> chunks) {
         super.process(chunks);
@@ -112,24 +139,37 @@ public class ReadPcapFileWorker extends SwingWorker<List<String>,String> {
         }
 
         //File[] pcapFiles = inputPath.listFiles(file -> file.getName().toLowerCase().endsWith("pcap"));
-        File[] pcapFiles = inputPath.listFiles(file -> isPcapFile(file));
+        // File[] pcapFiles = inputPath.listFiles(file -> isPcapFile(file));
+        List<File> pcapFiles = findAllPcapFiles(inputPath);
 
-        int file_cnt = pcapFiles.length;
+        // int file_cnt = pcapFiles.length;
+        int file_cnt = pcapFiles.size();
         logger.debug("CICFlowMeter found :{} pcap files", file_cnt);
         publish(String.format("CICFlowMeter found :%s pcap files", file_cnt));
         publish("");
         publish("");
 
-        for(int i=0;i<file_cnt;i++) {
-            File file = pcapFiles[i];
-            if (file.isDirectory()) {
-                continue;
-            }
-            firePropertyChange(PROPERTY_CUR_FILE,"",file.getName());
-            firePropertyChange(PROPERTY_FILE_CNT,file_cnt,i+1);//begin with 1
-            readPcapFile(file.getPath(),outPath);
-        }
+        // for(int i=0;i<file_cnt;i++) {
+        //     File file = pcapFiles[i];
+        //     if (file.isDirectory()) {
+        //         continue;
+        //     }
+        //     firePropertyChange(PROPERTY_CUR_FILE,"",file.getName());
+        //     firePropertyChange(PROPERTY_FILE_CNT,file_cnt,i+1);//begin with 1
+        //     readPcapFile(file.getPath(),outPath);
+        // }
 
+        for(File file: pcapFiles){
+            if (file.isDirectory() || ! file.exists())
+                continue;
+            firePropertyChange(PROPERTY_CUR_FILE,"",file.getName());
+            firePropertyChange(PROPERTY_FILE_CNT,file_cnt, pcapFiles.indexOf(file)+1);//begin with 1
+            readPcapFile(file.getPath(),outPath);
+
+            System.gc();
+        }
+        System.gc();
+        return;        
     }
 
     private void readPcapFile(String inputFile, String outPath) {

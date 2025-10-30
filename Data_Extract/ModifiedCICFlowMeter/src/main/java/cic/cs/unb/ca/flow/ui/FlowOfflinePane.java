@@ -252,13 +252,13 @@ public class FlowOfflinePane extends JPanel{
 
         JLabel lbl1 = new JLabel("Flow TimeOut:");
         param1Ele = new Vector<>();
-        param1Ele.add(360000L);
+        param1Ele.add(360000000L);
         param1 = new JComboBox<>(param1Ele);
         param1.setEditable(true);
 
         JLabel lbl2 = new JLabel("Activity Timeout:");
         param2Ele = new Vector<>();
-        param2Ele.add(120000000000L);
+        param2Ele.add(12000000L);
         param2 = new JComboBox<>(param2Ele);
         param2.setEditable(true);
 
