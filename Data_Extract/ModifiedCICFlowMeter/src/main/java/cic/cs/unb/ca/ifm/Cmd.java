@@ -31,7 +31,7 @@ public class Cmd {
     public static void main(String[] args) {
 
         long flowTimeout = 360000000L;
-        long activityTimeout = 12000000L;
+        long activityTimeout = 1200000000L;
         // String rootPath = System.getProperty("user.dir"); 
         String pcapPath;
         String outPath;

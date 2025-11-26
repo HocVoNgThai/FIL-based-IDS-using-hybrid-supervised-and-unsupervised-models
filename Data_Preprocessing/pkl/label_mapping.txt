@@ -1,0 +1,16 @@
+Benign: 0
+DDoS: 1
+DNS_Spoofing: 2
+DoS: 3 - 2
+MITM_ArpSpoofing: 4
+Merlin: 5
+Mirai: 6
+Reconnaisance: 7 - 3
+Vulnerability_Scan: 8 - 4
+
+IL
+Benign: 0
+DDoS: 1
+DoS: 2
+Reconnaisance: 3
+Vulnerability_Scan: 4
