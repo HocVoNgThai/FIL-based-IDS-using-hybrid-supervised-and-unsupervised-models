@@ -1,76 +1,97 @@
 # scripts/session2.py
-import os, sys, numpy as np
+import os
+import sys
+import numpy as np
+from sklearn.metrics import f1_score, accuracy_score
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from src.models import AETrainer, IncrementalOCSVM, OpenSetXGBoost
 from src.pipeline import SequentialHybridPipeline
-from src.utils import SessionDataLoader, SessionManager, evaluate_final_pipeline, evaluate_unsupervised_detailed, plot_metric_comparison, plot_unknown_breakdown
+from src.utils import (
+    SessionDataLoader, SessionManager, evaluate_final_pipeline, 
+    evaluate_unsupervised_detailed, evaluate_supervised_model, 
+    evaluate_supervised_with_unknown, evaluate_gray_zone,
+    plot_comparison_chart, get_label_name, plot_unknown_breakdown, 
+    calculate_unknown_metrics
+)
 
-def load_replay_buffer(path, sample_size=30000):
-    loader = SessionDataLoader()
-    loader.load_scaler('sessions/session0/scaler.joblib')
+def load_replay_buffer(path):
+    loader = SessionDataLoader(); loader.load_scaler('sessions/session0/scaler.joblib')
     X, y = loader.load_session_data(path, scaler_fit=False)
-    if len(X) > sample_size:
-        idx = np.random.choice(len(X), sample_size, replace=False)
-        return X[idx], y[idx]
+    if len(X) > 30000: idx = np.random.choice(len(X), 30000, replace=False); return X[idx], y[idx]
     return X, y
 
-def analyze_and_plot_unknowns(y_true, preds, details, unknown_label, save_dir):
-    y_true = np.array(y_true); preds = np.array(preds); reasons = details['pred_reason']
-    
-    is_true = (y_true == unknown_label)
-    total_true = np.sum(is_true)
-    
-    is_pred = (preds == "UNKNOWN_ATTACK")
-    total_pred = np.sum(is_pred)
-    
-    tp = np.sum(is_true & is_pred)
-    tp_low_conf = np.sum(is_true & is_pred & (reasons == 2))
-    tp_rejected = np.sum(is_true & is_pred & (reasons == 3))
-    
-    print(f"\n[UNKNOWN ANALYSIS] Target Label: {unknown_label}")
-    print(f" - Actual: {total_true} | Predicted: {total_pred} | Correct: {tp}")
-    print(f"   > Via Low Confidence: {tp_low_conf}")
-    print(f"   > Via Unsup Rejection: {tp_rejected}")
-    
-    plot_unknown_breakdown(total_true, total_pred, tp, f"Label {unknown_label} (Session 2)", f"{save_dir}/unknown_breakdown_sess2.png")
-
 def session2_workflow():
-    print("=== SESSION 2 ==="); save_dir = "results/session2"
-    mgr = SessionManager()
-    mgr.advance_to_session_2("Code_XuLi/session2_train.parquet", "Code_XuLi/session2_test.parquet")
+    print("=== SESSION 2: Vuln Scan (4) DETECTION & IL ==="); save_dir = "results/session2"
+    mgr = SessionManager(); mgr.advance_to_session_2("Code_XuLi/session2_train.parquet", "Code_XuLi/session2_test.parquet")
     loader = SessionDataLoader(); loader.load_scaler('sessions/session0/scaler.joblib')
     X_train, y_train = loader.load_session_data("Code_XuLi/session2_train.parquet")
     X_test, y_test = loader.load_session_data("Code_XuLi/session2_test.parquet")
     
-    # Load
     ae = AETrainer(81, 32); ocsvm = IncrementalOCSVM(nu=0.1); xgb = OpenSetXGBoost(0.7)
     mgr.load_models(1, {'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb})
     pipeline = SequentialHybridPipeline(ae, ocsvm, xgb)
     
+    metrics_data = {'XGBoost': {}, 'AE': {}, 'OCSVM': {}, 'Pipeline': {}}
+    
     # --- PHASE 1: Detection ---
-    print("\n--- Phase 1: Detection (Pre-IL) ---")
+    print("\n--- Phase 1: Detection ---")
     preds, details = pipeline.predict(X_train, return_details=True)
     
-    analyze_and_plot_unknowns(y_train, preds, details, unknown_label=4, save_dir=save_dir)
-    ae_pre_rep, oc_pre_rep = evaluate_unsupervised_detailed(y_train, details['ae_pred'], details['ocsvm_pred'], "Session 2 Pre-IL", save_dir, return_dict=True)
+    calculate_unknown_metrics(y_train, preds, unknown_label=4, save_dir=save_dir, session_name="PreIL")
+    
+    xgb_pre, xgb_conf = pipeline.xgb.predict_with_confidence(X_train)
+    metrics_data['XGBoost']['Pre'] = evaluate_supervised_with_unknown(
+        y_train, xgb_pre, xgb_conf, 0.7, "Sess2_PreIL", save_dir, target_unknown_label=4
+    )
+    
+    evaluate_gray_zone(y_train, xgb_pre, xgb_conf, details['ae_pred'], details['ocsvm_pred'], 0.7, 0.99, "Sess2_PreIL", save_dir)
+    
+    ae_f1, oc_f1 = evaluate_unsupervised_detailed(y_train, details['ae_pred'], details['ocsvm_pred'], "Sess2_PreIL", save_dir, return_f1=True)
+    metrics_data['AE']['Pre'] = ae_f1; metrics_data['OCSVM']['Pre'] = oc_f1
+    
+    y_str_train = [get_label_name(y) if y!=4 else "UNKNOWN" for y in y_train]
+    metrics_data['Pipeline']['Pre'] = f1_score(y_str_train, preds, average='weighted')
     
     # --- PHASE 2: IL ---
-    print("\n--- Phase 2: Incremental Learning ---")
+    print("\n--- Phase 2: IL ---")
+    # Replay buffer từ session trước đó (S1)
     X_old, y_old = load_replay_buffer("Code_XuLi/session1_train.parquet")
     pipeline.incremental_learning(X_train, y_train, X_old, y_old)
     
     # --- PHASE 3: Eval ---
-    print("\n--- Phase 3: Evaluation (Post-IL) ---")
+    print("\n--- Phase 3: Eval (Post-IL) ---")
+    # 1. Test S2 (Current)
     final_preds, details_test = pipeline.predict(X_test, return_details=True)
-    evaluate_final_pipeline(y_test, final_preds, "Session 2 Post-IL", save_dir)
+    metrics_data['Pipeline']['Post'] = evaluate_final_pipeline(y_test, final_preds, "Sess2_PostIL", save_dir, return_f1=True)
     
-    ae_post_rep, oc_post_rep = evaluate_unsupervised_detailed(y_test, details_test['ae_pred'], details_test['ocsvm_pred'], "Session 2 Post-IL", save_dir, return_dict=True)
+    xgb_post, _ = pipeline.xgb.predict_with_confidence(X_test)
+    metrics_data['XGBoost']['Post'] = evaluate_supervised_model(y_test, xgb_post, "Sess2_PostIL", save_dir, "XGBoost", return_f1=True)
     
-    # VẼ BIỂU ĐỒ SO SÁNH
-    plot_metric_comparison(ae_pre_rep, ae_post_rep, "Autoencoder", "Session 2", f"{save_dir}/ae_comparison_sess2.png")
-    plot_metric_comparison(oc_pre_rep, oc_post_rep, "OCSVM", "Session 2", f"{save_dir}/ocsvm_comparison_sess2.png")
+    ae_f1_p, oc_f1_p = evaluate_unsupervised_detailed(y_test, details_test['ae_pred'], details_test['ocsvm_pred'], "Sess2_PostIL", save_dir, return_f1=True)
+    metrics_data['AE']['Post'] = ae_f1_p; metrics_data['OCSVM']['Post'] = oc_f1_p
     
+    plot_comparison_chart(metrics_data, "Session 2", f"{save_dir}/comparison_chart_sess2.png")
     mgr.save_models({'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb}, 2)
-    return pipeline
-
-if __name__ == "__main__": session2_workflow()
+    
+    # 2. CHECK FORGETTING (Test ngược trên S1 và S0)
+    y_str_s2 = [get_label_name(y) for y in y_test]
+    acc_s2 = accuracy_score(y_str_s2, final_preds)
+    
+    # Test S1
+    print("\n>> Checking Forgetting on Session 1...")
+    loader1 = SessionDataLoader(); loader1.load_scaler('sessions/session0/scaler.joblib')
+    X_s1, y_s1 = loader1.load_session_data("Code_XuLi/session1_test.parquet")
+    preds_s1 = pipeline.predict(X_s1)
+    acc_s1 = accuracy_score([get_label_name(y) for y in y_s1], preds_s1)
+    
+    # Test S0
+    print(">> Checking Forgetting on Session 0...")
+    loader0 = SessionDataLoader(); loader0.load_scaler('sessions/session0/scaler.joblib')
+    X_s0, y_s0 = loader0.load_session_data("Code_XuLi/session0_test.parquet")
+    preds_s0 = pipeline.predict(X_s0)
+    acc_s0 = accuracy_score([get_label_name(y) for y in y_s0], preds_s0)
+    
+    print(f"   Acc S2: {acc_s2:.4f} | Acc S1: {acc_s1:.4f} | Acc S0: {acc_s0:.4f}")
+    
+    return pipeline, {'S0': acc_s0, 'S1': acc_s1, 'S2': acc_s2}
