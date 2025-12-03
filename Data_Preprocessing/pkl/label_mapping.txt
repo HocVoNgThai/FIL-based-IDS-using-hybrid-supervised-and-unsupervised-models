@@ -14,3 +14,26 @@ DDoS: 1
 DoS: 2
 Reconnaisance: 3
 Vulnerability_Scan: 4
+
+
+IL MITM_ArpSpoofing
+Benign: 0
+DDoS: 1 - old: 1
+DoS: 2 -- old: 2
+Reconnaisance: 3 --old :7
+MITM_ArpSpoofing: 4 -- old: 4
+
+
+IL DNS_Spoofing
+Benign: 0
+DDoS: 1 - old: 1
+DoS: 2 -- old: 2
+Reconnaisance: 3 --old :7
+DNS_Spoofing: 4 -- old: 2
+
+IL Merlin
+Benign: 0
+DDoS: 1 - old: 1
+DoS: 2 -- old: 2
+Reconnaisance: 3 --old :7
+Merlin: 4 -- old:5
