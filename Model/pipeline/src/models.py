@@ -10,66 +10,52 @@ from sklearn.model_selection import train_test_split
 import xgboost as xgb
 from collections import Counter
 
-# ==================== 1. DENOISING AUTOENCODER (DAE) ====================
-# [UPDATE] Dùng Denoising AE để chống Identity Mapping
-class DenoisingAE(nn.Module):
-    def __init__(self, input_dim=81, latent_dim=12): # Latent nhỏ vừa phải
-        super(DenoisingAE, self).__init__()
+# ==================== 1. DEEP AUTOENCODER (Requested Version) ====================
+class AnomalyAE(nn.Module):
+    def __init__(self, input_dim=81, latent_dim=32):
+        super(AnomalyAE, self).__init__()
         self.encoder = nn.Sequential(
-            nn.Linear(input_dim, 256), nn.BatchNorm1d(256), nn.LeakyReLU(0.1),
-            nn.Linear(256, 128), nn.BatchNorm1d(128), nn.LeakyReLU(0.1),
-            nn.Linear(128, 64), nn.BatchNorm1d(64), nn.LeakyReLU(0.1),
-            nn.Linear(64, latent_dim) 
+            nn.Linear(input_dim, 512), nn.BatchNorm1d(512), nn.LeakyReLU(0.1), nn.Dropout(0.1),
+            nn.Linear(512, 256), nn.BatchNorm1d(256), nn.LeakyReLU(0.1), nn.Dropout(0.1),
+            nn.Linear(256, 128), nn.BatchNorm1d(128), nn.LeakyReLU(0.1), nn.Dropout(0.1),
+            nn.Linear(128, 64), nn.BatchNorm1d(64), nn.LeakyReLU(0.1), 
+            nn.Linear(64, latent_dim)
         )
         self.decoder = nn.Sequential(
             nn.Linear(latent_dim, 64), nn.BatchNorm1d(64), nn.LeakyReLU(0.1),
-            nn.Linear(64, 128), nn.BatchNorm1d(128), nn.LeakyReLU(0.1),
-            nn.Linear(128, 256), nn.BatchNorm1d(256), nn.LeakyReLU(0.1),
-            nn.Linear(256, input_dim)
+            nn.Linear(64, 128), nn.BatchNorm1d(128), nn.LeakyReLU(0.1), nn.Dropout(0.1),
+            nn.Linear(128, 256), nn.BatchNorm1d(256), nn.LeakyReLU(0.1), nn.Dropout(0.1),
+            nn.Linear(256, 512), nn.BatchNorm1d(512), nn.LeakyReLU(0.1), nn.Dropout(0.1), 
+            nn.Linear(512, input_dim)
         )
-        
-    def forward(self, x):
-        return self.decoder(self.encoder(x))
+    def forward(self, x): return self.decoder(self.encoder(x))
 
 class AETrainer:
-    def __init__(self, input_dim=81, encoding_dim=12, lr=1e-3):
+    def __init__(self, input_dim=81, encoding_dim=32, lr=1e-4):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = DenoisingAE(input_dim, encoding_dim).to(self.device)
+        self.model = AnomalyAE(input_dim, encoding_dim).to(self.device)
         self.criterion = nn.MSELoss()
-        self.optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=1e-5)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.known_threshold = None
-        
-    def train_on_known_data(self, X_benign, epochs=100, batch_size=1024, verbose=True):
-        if verbose: print(f"Training Denoising AE on {len(X_benign)} samples...")
+
+    def train_on_known_data(self, X_benign, epochs=200, batch_size=512, verbose=True):
+        if verbose: print(f"Training Deep AE on {len(X_benign)} samples...")
         self.model.train()
-        
-        tensor_X = torch.FloatTensor(X_benign).to(self.device)
-        dataset = torch.utils.data.TensorDataset(tensor_X)
-        loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+        tensor = torch.FloatTensor(X_benign).to(self.device)
+        loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(tensor), batch_size=batch_size, shuffle=True, drop_last=True)
         
         for epoch in range(epochs):
             for batch in loader:
-                x_clean = batch[0]
-                
-                # [QUAN TRỌNG] Thêm nhiễu Gaussian (Noise Injection)
-                # Ép AE phải tái tạo lại x_clean từ x_noisy
-                noise = torch.randn_like(x_clean) * 0.15 
-                x_noisy = x_clean + noise
-                
                 self.optimizer.zero_grad()
-                output = self.model(x_noisy)
-                loss = self.criterion(output, x_clean) # So sánh với ảnh gốc sạch
+                loss = self.criterion(self.model(batch[0]), batch[0])
                 loss.backward()
                 self.optimizer.step()
         
-        # Tính ngưỡng dựa trên dữ liệu sạch
         self.model.eval()
         errors = self.get_reconstruction_errors(X_benign)
-        
-        # Percentile 90: Chặt chẽ vừa đủ
-        self.known_threshold = np.percentile(errors, 90)
-        
-        if verbose: print(f"DAE Threshold (Percentile 90): {self.known_threshold:.6f}")
+        # Threshold: Mean + 1.0 * Std (Khá chặt chẽ)
+        self.known_threshold = np.mean(errors) + 1.0 * np.std(errors)
+        if verbose: print(f"AE Threshold set: {self.known_threshold:.6f}")
 
     def get_reconstruction_errors(self, data):
         self.model.eval()
@@ -78,36 +64,42 @@ class AETrainer:
             errors = []
             for i in range(0, len(tensor), 2048):
                 batch = tensor[i:i+2048]
-                # Khi test không thêm nhiễu
                 errors.append(torch.mean((batch - self.model(batch))**2, dim=1).cpu().numpy())
             return np.concatenate(errors)
-    
+
+    # [Compatibility] Thêm hàm này để Pipeline gọi không bị lỗi
+    def is_normal(self, X):
+        return self.get_reconstruction_errors(X) <= self.known_threshold
+
     def save_model(self, p): os.makedirs(os.path.dirname(p), exist_ok=True); torch.save({'st': self.model.state_dict(), 'th': self.known_threshold}, p)
     def load_model(self, p): ckpt = torch.load(p, map_location=self.device, weights_only=False); self.model.load_state_dict(ckpt['st']); self.known_threshold = ckpt['th']
 
-# ==================== 2. INCREMENTAL OCSVM ====================
+# ==================== 2. INCREMENTAL OCSVM (Requested Version) ====================
 class IncrementalOCSVM:
     def __init__(self, nu=0.15, random_state=42):
-        self.feature_map = Nystroem(gamma=0.1, random_state=random_state, n_components=600)
+        # Nystroem 800 components như yêu cầu
+        self.feature_map = Nystroem(gamma=0.1, random_state=random_state, n_components=1000)
         self.model = SGDOneClassSVM(nu=nu, random_state=random_state, shuffle=True)
         self.is_fitted = False
 
-    def train(self, X_benign):
-        print(f"Training OCSVM (nu={self.model.nu})...")
-        X_mapped = self.feature_map.fit_transform(X_benign)
-        self.model.fit(X_mapped); self.is_fitted = True
+    def train(self, X): 
+        self.model.fit(self.feature_map.fit_transform(X))
+        self.is_fitted = True
 
-    def partial_fit(self, X_benign):
-        if not self.is_fitted: self.train(X_benign)
-        else: self.model.partial_fit(self.feature_map.transform(X_benign))
+    def partial_fit(self, X): 
+        if self.is_fitted:
+            self.model.partial_fit(self.feature_map.transform(X))
+        else:
+            self.train(X)
 
     def decision_function(self, X): return self.model.decision_function(self.feature_map.transform(X))
+    
     def save_model(self, p): os.makedirs(os.path.dirname(p), exist_ok=True); joblib.dump({'model': self.model, 'map': self.feature_map, 'fitted': self.is_fitted}, p)
     def load_model(self, p): d = joblib.load(p); self.model, self.feature_map, self.is_fitted = d['model'], d['map'], d['fitted']
 
-# ==================== 3. XGBOOST (Cơ bản) ====================
+# ==================== 3. XGBOOST (Giữ nguyên để Pipeline hoạt động) ====================
 class OpenSetXGBoost:
-    def __init__(self, confidence_threshold=0.7, max_classes_buffer=20): # [FIX] Threshold mặc định 0.7
+    def __init__(self, confidence_threshold=0.75, max_classes_buffer=20):
         self.confidence_threshold = confidence_threshold
         self.model = None
         self.label_encoder = {}
@@ -133,13 +125,13 @@ class OpenSetXGBoost:
             self.model = xgb.XGBClassifier(
                 n_estimators=800, max_depth=6, learning_rate=0.01, 
                 objective='multi:softprob', num_class=self.max_classes, 
-                n_jobs=-1, random_state=42, early_stopping_rounds=50
+                n_jobs=-1, random_state=42, early_stopping_rounds=150
             )
             self.model.fit(X_train, y_train, sample_weight=w_train, eval_set=[(X_val, y_val)], verbose=False)
         else:
             print(f"XGBoost Incremental Update ({len(X)} samples)...")
             cur_est = self.model.get_booster().num_boosted_rounds()
-            self.model.set_params(n_estimators=cur_est + 100)
+            self.model.set_params(n_estimators=cur_est + 200)
             self.model.fit(X_train, y_train, sample_weight=w_train, eval_set=[(X_val, y_val)], verbose=False, xgb_model=self.model.get_booster())
 
     def predict_with_confidence(self, X):

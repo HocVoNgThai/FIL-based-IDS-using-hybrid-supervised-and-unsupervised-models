@@ -23,9 +23,9 @@ def session0_initial_training():
     X_train, y_train = loader.load_session_data(train_path, scaler_fit=True)
     X_test, y_test = loader.load_session_data(test_path)
     
-    ae = AETrainer(81, 12); ae.train_on_known_data(X_train[y_train==0], epochs=100)
+    ae = AETrainer(81, 32); ae.train_on_known_data(X_train[y_train==0], epochs=100)
     ocsvm = IncrementalOCSVM(nu=0.15); ocsvm.train(X_train[y_train==0])
-    xgb = OpenSetXGBoost(0.7); xgb.train(X_train, y_train, is_incremental=False)
+    xgb = OpenSetXGBoost(0.75); xgb.train(X_train, y_train, is_incremental=False)
     pipeline = SequentialHybridPipeline(ae, ocsvm, xgb)
     
     print("\n--- EVAL SESSION 0 ---")

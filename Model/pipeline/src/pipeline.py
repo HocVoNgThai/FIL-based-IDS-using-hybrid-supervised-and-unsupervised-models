@@ -10,60 +10,69 @@ class SequentialHybridPipeline:
         print(f"Pipeline processing {len(X)} samples...")
         xgb_pred, xgb_conf = self.xgb.predict_with_confidence(X)
         
-        # [QUAN TRỌNG] Quay lại ngưỡng 0.70
-        # Nếu XGBoost không chắc chắn > 70%, ta coi là UNKNOWN ngay lập tức.
-        # Điều này sẽ khôi phục lại khả năng phát hiện Unknown (52% -> 52%)
-        CONF_MIN_UNKNOWN = 0.70 
+        # --- CẤU HÌNH QUAN TRỌNG ---
+        # Ngưỡng từ chối cứng: Dưới mức này là UNKNOWN ngay lập tức.
+        # 0.8 là mức an toàn để bảo vệ các Unknown mà XGBoost đã "đánh hơi" thấy (thường ~0.5-0.7)
+        CONF_REJECT = 0.75 
         
-        # Chỉ tin là Benign nếu cực kỳ chắc chắn
-        CONF_HIGH_BENIGN = 0.95 
+        # Ngưỡng tin tưởng tuyệt đối
+        CONF_HIGH = 0.95
         
-        ae_pred = (self.ae.get_reconstruction_errors(X) <= self.ae.known_threshold).astype(int)
-        ocsvm_pred = (self.ocsvm.decision_function(X) > 0).astype(int)
+        ae_is_normal = self.ae.is_normal(X)
+        ocsvm_is_normal = (self.ocsvm.decision_function(X) > 0)
         
         final_preds = []
-        stats = {"low_unk":0, "high_benign":0, "gray_rec":0, "gray_rej":0}
+        stats = {"low_unk":0, "atk_acc":0, "high_ben":0, "gray_rec":0, "gray_rej":0}
         
         for i in range(len(X)):
             p_val = int(xgb_pred[i])
             conf = xgb_conf[i]
             
-            # CASE 1: XGBoost dự đoán là ATTACK (DDoS, DoS...)
-            if p_val != 0:
-                if conf >= CONF_MIN_UNKNOWN:
-                    # Đủ tự tin -> Chấp nhận nhãn
-                    final_preds.append(self.label_map.get(p_val, "UNKNOWN"))
-                else:
-                    # Không đủ tự tin -> UNKNOWN (Để bắt Reconn/Vuln Scan)
-                    final_preds.append("UNKNOWN")
-                    stats["low_unk"] += 1
-
-            # CASE 2: XGBoost dự đoán là BENIGN
-            else:
-                if conf >= CONF_HIGH_BENIGN:
+            # --- LUỒNG XỬ LÝ "BÀN TAY SẮT" ---
+            
+            # BƯỚC 1: Kiểm tra độ tự tin của XGBoost trước
+            if conf < CONF_REJECT:
+                # Nếu XGBoost không chắc chắn (bất kể nó đoán là Benign hay Attack)
+                # -> Gán ngay là UNKNOWN. Không cho OCSVM/AE can thiệp.
+                final_preds.append("UNKNOWN")
+                stats["low_unk"] += 1
+                continue # Dừng xử lý sample này, chuyển sang sample tiếp theo
+            
+            # BƯỚC 2: Nếu đủ độ tự tin (>= 0.8)
+            
+            if p_val != 0: # XGBoost bảo là Attack
+                # Vì conf >= 0.8, ta tin nó luôn
+                final_preds.append(self.label_map.get(p_val, "UNKNOWN"))
+                stats["atk_acc"] += 1
+                
+            else: # XGBoost bảo là Benign
+                if conf >= CONF_HIGH:
+                    # Rất tự tin -> Benign
                     final_preds.append("BENIGN")
-                    stats["high_benign"] += 1
+                    stats["high_ben"] += 1
                 else:
-                    # Gray Zone (Benign < 0.98)
-                    # Phải vượt qua cả AE và OCSVM mới được là Benign
-                    if ae_pred[i] == 1 and ocsvm_pred[i] == 1:
+                    # Gray Zone (0.8 <= Conf < 0.99): Vùng này mới cần OCSVM/AE
+                    if ae_is_normal[i] and ocsvm_is_normal[i]:
                         final_preds.append("BENIGN")
                         stats["gray_rec"] += 1
                     else:
                         final_preds.append("UNKNOWN")
                         stats["gray_rej"] += 1
         
-        print(f"   [STATS] HighBen: {stats['high_benign']} | LowConf (Unknown): {stats['low_unk']}")
+        print(f"   [STATS] HighBen: {stats['high_ben']} | AtkAcc: {stats['atk_acc']} | LowConf(Unknown): {stats['low_unk']}")
         print(f"           GrayRec (Benign): {stats['gray_rec']} | GrayRej (Unknown): {stats['gray_rej']}")
         
-        details = {'ae_pred': ae_pred, 'ocsvm_pred': ocsvm_pred}
+        details = {'ae_pred': ae_is_normal.astype(int), 'ocsvm_pred': ocsvm_is_normal.astype(int)}
         return (final_preds, details) if return_details else final_preds
 
     def incremental_learning(self, X_new, y_new, X_old, y_old):
         print("=== INCREMENTAL LEARNING ===")
         X_benign = X_new[y_new == 0]
         if len(X_benign) > 0:
-            # Retrain DAE với noise
-            self.ae.train_on_known_data(X_benign, 5, verbose=False)
+            # Retrain AE nhẹ
+            self.ae.train_on_known_data(X_benign, 200, verbose=False)
+            # OCSVM partial_fit
             self.ocsvm.partial_fit(X_benign)
+        
+        # XGBoost retrain
         self.xgb.safe_incremental_retrain(X_old, y_old, X_new, y_new)

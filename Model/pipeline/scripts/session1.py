@@ -37,7 +37,7 @@ def session1_workflow():
     X_train, y_train = loader.load_session_data(s1_train)
     X_test, y_test = loader.load_session_data(s1_test)
     
-    ae = AETrainer(81, 12); ocsvm = IncrementalOCSVM(nu=0.15); xgb = OpenSetXGBoost(0.7)
+    ae = AETrainer(81, 32); ocsvm = IncrementalOCSVM(nu=0.15); xgb = OpenSetXGBoost(0.75)
     mgr.load_models(0, {'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb})
     pipeline = SequentialHybridPipeline(ae, ocsvm, xgb)
     
@@ -51,11 +51,11 @@ def session1_workflow():
     
     xgb_pre, xgb_conf = pipeline.xgb.predict_with_confidence(X_train)
     metrics_data['XGBoost']['Pre'] = evaluate_supervised_with_unknown(
-        y_train, xgb_pre, xgb_conf, threshold=0.7, 
+        y_train, xgb_pre, xgb_conf, threshold=0.75, 
         session_name="Sess1_PreIL", save_dir=save_dir, target_unknown=3
     )
     
-    evaluate_gray_zone(y_train, xgb_pre, xgb_conf, details['ae_pred'], details['ocsvm_pred'], 0.7, 0.99, "Sess1_PreIL", save_dir)
+    evaluate_gray_zone(y_train, xgb_pre, xgb_conf, details['ae_pred'], details['ocsvm_pred'], 0.75, 0.95, "Sess1_PreIL", save_dir)
     
     ae_f1, oc_f1 = evaluate_unsupervised_detailed(y_train, details['ae_pred'], details['ocsvm_pred'], "Sess1_PreIL", save_dir, return_f1=True)
     metrics_data['AE']['Pre'] = ae_f1; metrics_data['OCSVM']['Pre'] = oc_f1
