@@ -10,10 +10,12 @@ from src.pipeline import SequentialHybridPipeline
 from src.utils import (
     SessionDataLoader, SessionManager, evaluate_final_pipeline, 
     evaluate_unsupervised_detailed, evaluate_supervised_model, 
-    evaluate_supervised_with_unknown, evaluate_gray_zone,
-    plot_comparison_chart, get_label_name, plot_unknown_breakdown, 
-    calculate_unknown_metrics
+    evaluate_supervised_with_unknown, evaluate_gray_zone, 
+    plot_comparison_chart, get_label_name, calculate_unknown_metrics
 )
+
+# [UPDATE] Đường dẫn mới
+BASE_DATA_DIR = "merge1.4_3-4-5/case-from-3-incre-4class-incre-6class"
 
 def load_replay_buffer(path):
     loader = SessionDataLoader(); loader.load_scaler('sessions/session0/scaler.joblib')
@@ -22,46 +24,55 @@ def load_replay_buffer(path):
     return X, y
 
 def session2_workflow():
-    print("=== SESSION 2: Vuln Scan (4) DETECTION & IL ==="); save_dir = "results/session2"
-    mgr = SessionManager(); mgr.advance_to_session_2("Code_XuLi/session2_train.parquet", "Code_XuLi/session2_test.parquet")
-    loader = SessionDataLoader(); loader.load_scaler('sessions/session0/scaler.joblib')
-    X_train, y_train = loader.load_session_data("Code_XuLi/session2_train.parquet")
-    X_test, y_test = loader.load_session_data("Code_XuLi/session2_test.parquet")
+    print("=== SESSION 2: Vuln Scan (4) & Merlin (5) DETECTION & IL ==="); save_dir = "results/session2"
     
-    ae = AETrainer(81, 32); ocsvm = IncrementalOCSVM(nu=0.1); xgb = OpenSetXGBoost(0.7)
+    # [UPDATE] Cập nhật đường dẫn file
+    s2_train = os.path.join(BASE_DATA_DIR, "train_session2.parquet")
+    s2_test = os.path.join(BASE_DATA_DIR, "test_session2.parquet")
+    s1_train = os.path.join(BASE_DATA_DIR, "train_session1.parquet") # Cho replay buffer
+    s1_test = os.path.join(BASE_DATA_DIR, "test_session1.parquet")   # Test S1
+    s0_test = os.path.join(BASE_DATA_DIR, "test_session0.parquet")   # Test S0
+    
+    mgr = SessionManager(); mgr.advance_to_session_2(s2_train, s2_test)
+    loader = SessionDataLoader(); loader.load_scaler('sessions/session0/scaler.joblib')
+    X_train, y_train = loader.load_session_data(s2_train)
+    X_test, y_test = loader.load_session_data(s2_test)
+    
+    ae = AETrainer(81, 12); ocsvm = IncrementalOCSVM(nu=0.15); xgb = OpenSetXGBoost(0.7)
     mgr.load_models(1, {'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb})
     pipeline = SequentialHybridPipeline(ae, ocsvm, xgb)
     
     metrics_data = {'XGBoost': {}, 'AE': {}, 'OCSVM': {}, 'Pipeline': {}}
     
-    # --- PHASE 1: Detection ---
+    # --- PHASE 1: Detection (Detecting both 4 and 5 as Unknown) ---
     print("\n--- Phase 1: Detection ---")
     preds, details = pipeline.predict(X_train, return_details=True)
     
-    calculate_unknown_metrics(y_train, preds, unknown_label=4, save_dir=save_dir, session_name="PreIL")
+    # [UPDATE] Pass list [4, 5] để đánh giá khả năng detect cả 2 loại unknown
+    calculate_unknown_metrics(y_train, preds, [4, 5], save_dir, "PreIL")
     
-    xgb_pre, xgb_conf = pipeline.xgb.predict_with_confidence(X_train)
+    xgb_pre, conf_pre = pipeline.xgb.predict_with_confidence(X_train)
+    # [UPDATE] Pass list [4, 5] vào target_unknown
     metrics_data['XGBoost']['Pre'] = evaluate_supervised_with_unknown(
-        y_train, xgb_pre, xgb_conf, 0.7, "Sess2_PreIL", save_dir, target_unknown_label=4
+        y_train, xgb_pre, conf_pre, 0.7, "Sess2_PreIL", save_dir, target_unknown=[4, 5]
     )
     
-    evaluate_gray_zone(y_train, xgb_pre, xgb_conf, details['ae_pred'], details['ocsvm_pred'], 0.7, 0.99, "Sess2_PreIL", save_dir)
+    evaluate_gray_zone(y_train, xgb_pre, conf_pre, details['ae_pred'], details['ocsvm_pred'], 0.7, 0.99, "Sess2_PreIL", save_dir)
     
     ae_f1, oc_f1 = evaluate_unsupervised_detailed(y_train, details['ae_pred'], details['ocsvm_pred'], "Sess2_PreIL", save_dir, return_f1=True)
     metrics_data['AE']['Pre'] = ae_f1; metrics_data['OCSVM']['Pre'] = oc_f1
     
-    y_str_train = [get_label_name(y) if y!=4 else "UNKNOWN" for y in y_train]
+    # [UPDATE] Logic tính F1 pre-IL coi 4 và 5 là UNKNOWN
+    y_str_train = [get_label_name(y) if y not in [4, 5] else "UNKNOWN" for y in y_train]
     metrics_data['Pipeline']['Pre'] = f1_score(y_str_train, preds, average='weighted')
     
     # --- PHASE 2: IL ---
     print("\n--- Phase 2: IL ---")
-    # Replay buffer từ session trước đó (S1)
-    X_old, y_old = load_replay_buffer("Code_XuLi/session1_train.parquet")
+    X_old, y_old = load_replay_buffer(s1_train)
     pipeline.incremental_learning(X_train, y_train, X_old, y_old)
     
     # --- PHASE 3: Eval ---
-    print("\n--- Phase 3: Eval (Post-IL) ---")
-    # 1. Test S2 (Current)
+    print("\n--- Phase 3: Eval ---")
     final_preds, details_test = pipeline.predict(X_test, return_details=True)
     metrics_data['Pipeline']['Post'] = evaluate_final_pipeline(y_test, final_preds, "Sess2_PostIL", save_dir, return_f1=True)
     
@@ -74,24 +85,19 @@ def session2_workflow():
     plot_comparison_chart(metrics_data, "Session 2", f"{save_dir}/comparison_chart_sess2.png")
     mgr.save_models({'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb}, 2)
     
-    # 2. CHECK FORGETTING (Test ngược trên S1 và S0)
-    y_str_s2 = [get_label_name(y) for y in y_test]
-    acc_s2 = accuracy_score(y_str_s2, final_preds)
+    # Tính BWT
+    y_s2 = [get_label_name(y) for y in y_test]; acc2 = accuracy_score(y_s2, final_preds)
     
-    # Test S1
-    print("\n>> Checking Forgetting on Session 1...")
     loader1 = SessionDataLoader(); loader1.load_scaler('sessions/session0/scaler.joblib')
-    X_s1, y_s1 = loader1.load_session_data("Code_XuLi/session1_test.parquet")
-    preds_s1 = pipeline.predict(X_s1)
-    acc_s1 = accuracy_score([get_label_name(y) for y in y_s1], preds_s1)
+    X1, y1 = loader1.load_session_data(s1_test)
+    acc1 = accuracy_score([get_label_name(y) for y in y1], pipeline.predict(X1))
     
-    # Test S0
-    print(">> Checking Forgetting on Session 0...")
     loader0 = SessionDataLoader(); loader0.load_scaler('sessions/session0/scaler.joblib')
-    X_s0, y_s0 = loader0.load_session_data("Code_XuLi/session0_test.parquet")
-    preds_s0 = pipeline.predict(X_s0)
-    acc_s0 = accuracy_score([get_label_name(y) for y in y_s0], preds_s0)
+    X0, y0 = loader0.load_session_data(s0_test)
+    acc0 = accuracy_score([get_label_name(y) for y in y0], pipeline.predict(X0))
     
-    print(f"   Acc S2: {acc_s2:.4f} | Acc S1: {acc_s1:.4f} | Acc S0: {acc_s0:.4f}")
+    print(f"   Acc S2: {acc2:.4f} | Acc S1: {acc1:.4f} | Acc S0: {acc0:.4f}")
     
-    return pipeline, {'S0': acc_s0, 'S1': acc_s1, 'S2': acc_s2}
+    return pipeline, {'S0': acc0, 'S1': acc1, 'S2': acc2}
+
+if __name__ == "__main__": session2_workflow()
