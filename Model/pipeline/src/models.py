@@ -53,8 +53,7 @@ class AETrainer:
         
         self.model.eval()
         errors = self.get_reconstruction_errors(X_benign)
-        # Threshold: Mean + 1.0 * Std (Khá chặt chẽ)
-        self.known_threshold = np.mean(errors) + 1.0 * np.std(errors)
+        self.known_threshold = np.mean(errors) + 0.25 * np.std(errors)
         if verbose: print(f"AE Threshold set: {self.known_threshold:.6f}")
 
     def get_reconstruction_errors(self, data):
@@ -99,7 +98,7 @@ class IncrementalOCSVM:
 
 # ==================== 3. XGBOOST (Giữ nguyên để Pipeline hoạt động) ====================
 class OpenSetXGBoost:
-    def __init__(self, confidence_threshold=0.75, max_classes_buffer=20):
+    def __init__(self, confidence_threshold=0.7, max_classes_buffer=20):
         self.confidence_threshold = confidence_threshold
         self.model = None
         self.label_encoder = {}

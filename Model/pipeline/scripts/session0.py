@@ -6,37 +6,44 @@ from src.models import AETrainer, IncrementalOCSVM, OpenSetXGBoost
 from src.pipeline import SequentialHybridPipeline
 from src.utils import *
 
-# [UPDATE] Đường dẫn mới
 BASE_DATA_DIR = "merge1.4_3-4-5/case-from-3-incre-4class-incre-6class"
+GLOBAL_SCALER_PATH = "sessions/global_scaler.joblib"
 
 def session0_initial_training():
-    print("=== SESSION 0 ===")
+    print("=== CASE 0 (INITIAL TRAINING) ===")
     
-    # [UPDATE] Cập nhật đường dẫn
     train_path = os.path.join(BASE_DATA_DIR, "train_session0.parquet")
     test_path = os.path.join(BASE_DATA_DIR, "test_session0.parquet")
     
     mgr = SessionManager()
-    mgr.initialize_session_0(train_path, test_path)
+    mgr.initialize_case_0(train_path, test_path)
     
     loader = SessionDataLoader()
-    X_train, y_train = loader.load_session_data(train_path, scaler_fit=True)
-    X_test, y_test = loader.load_session_data(test_path)
+    
+    X_train_raw, y_train = loader.load_data_raw(train_path)
+    
+    X_train = loader.apply_scaling(X_train_raw, fit=True)
+    loader.save_scaler(GLOBAL_SCALER_PATH) 
+    
+    X_test_raw, y_test = loader.load_data_raw(test_path)
+    X_test = loader.apply_scaling(X_test_raw, fit=False) 
     
     ae = AETrainer(81, 32); ae.train_on_known_data(X_train[y_train==0], epochs=100)
     ocsvm = IncrementalOCSVM(nu=0.15); ocsvm.train(X_train[y_train==0])
-    xgb = OpenSetXGBoost(0.75); xgb.train(X_train, y_train, is_incremental=False)
+    xgb = OpenSetXGBoost(0.7); xgb.train(X_train, y_train, is_incremental=False)
+    
     pipeline = SequentialHybridPipeline(ae, ocsvm, xgb)
     
-    print("\n--- EVAL SESSION 0 ---")
+    print("\n--- EVAL CASE 0 ---")
     xgb_pred, _ = xgb.predict_with_confidence(X_test)
-    evaluate_supervised_model(y_test, xgb_pred, "Session 0", "results", "XGBoost")
+    evaluate_supervised_model(y_test, xgb_pred, "Case 0", "results", "XGBoost")
+    
     final_preds, details = pipeline.predict(X_test, return_details=True)
-    evaluate_final_pipeline(y_test, final_preds, "Session 0", "results")
-    evaluate_unsupervised_detailed(y_test, details['ae_pred'], details['ocsvm_pred'], "Session 0", "results")
+    evaluate_final_pipeline(y_test, final_preds, "Case 0", "results")
+    evaluate_unsupervised_detailed(y_test, details['ae_pred'], details['ocsvm_pred'], "Case 0", "results")
     
     mgr.save_models({'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb}, 0)
-    loader.save_scaler('sessions/session0/scaler.joblib')
+    
     acc = accuracy_score([get_label_name(y) for y in y_test], final_preds)
     return {'ae.pt': ae}, loader, pipeline, acc
 
