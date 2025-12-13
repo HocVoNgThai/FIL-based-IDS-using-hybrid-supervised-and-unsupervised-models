@@ -11,40 +11,38 @@ GLOBAL_SCALER_PATH = "sessions/global_scaler.joblib"
 
 def session0_initial_training():
     print("=== CASE 0 (INITIAL TRAINING) ===")
-    
     train_path = os.path.join(BASE_DATA_DIR, "train_session0.parquet")
     test_path = os.path.join(BASE_DATA_DIR, "test_session0.parquet")
-    
-    mgr = SessionManager()
-    mgr.initialize_case_0(train_path, test_path)
-    
+    mgr = SessionManager(); mgr.initialize_case_0(train_path, test_path)
     loader = SessionDataLoader()
     
     X_train_raw, y_train = loader.load_data_raw(train_path)
-    
     X_train = loader.apply_scaling(X_train_raw, fit=True)
-    loader.save_scaler(GLOBAL_SCALER_PATH) 
+    loader.save_scaler(GLOBAL_SCALER_PATH)
     
-    X_test_raw, y_test = loader.load_data_raw(test_path)
-    X_test = loader.apply_scaling(X_test_raw, fit=False) 
+    X_test = loader.apply_scaling(loader.load_data_raw(test_path)[0], fit=False)
+    y_test = loader.load_data_raw(test_path)[1]
     
     ae = AETrainer(81, 32); ae.train_on_known_data(X_train[y_train==0], epochs=100)
     ocsvm = IncrementalOCSVM(nu=0.15); ocsvm.train(X_train[y_train==0])
     xgb = OpenSetXGBoost(0.7); xgb.train(X_train, y_train, is_incremental=False)
-    
     pipeline = SequentialHybridPipeline(ae, ocsvm, xgb)
     
     print("\n--- EVAL CASE 0 ---")
+    metrics = {}
+    
     xgb_pred, _ = xgb.predict_with_confidence(X_test)
-    evaluate_supervised_model(y_test, xgb_pred, "Case 0", "results", "XGBoost")
+    metrics['XGBoost'] = evaluate_supervised_model(y_test, xgb_pred, "Case 0", "results", "XGBoost")
     
     final_preds, details = pipeline.predict(X_test, return_details=True)
-    evaluate_final_pipeline(y_test, final_preds, "Case 0", "results")
-    evaluate_unsupervised_detailed(y_test, details['ae_pred'], details['ocsvm_pred'], "Case 0", "results")
+    metrics['Pipeline'] = evaluate_final_pipeline(y_test, final_preds, "Case 0", "results")
+    
+    ae_rep, oc_rep = evaluate_unsupervised_detailed(y_test, details['ae_pred'], details['ocsvm_pred'], "Case 0", "results")
+    metrics['AE'] = ae_rep
+    metrics['OCSVM'] = oc_rep
     
     mgr.save_models({'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb}, 0)
-    
     acc = accuracy_score([get_label_name(y) for y in y_test], final_preds)
-    return {'ae.pt': ae}, loader, pipeline, acc
+    return {'ae.pt': ae}, loader, pipeline, acc, metrics
 
 if __name__ == "__main__": session0_initial_training()
