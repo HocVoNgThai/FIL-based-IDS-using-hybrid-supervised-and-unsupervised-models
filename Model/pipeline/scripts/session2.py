@@ -32,7 +32,7 @@ def session2_workflow():
     
     ae = AETrainer(81, 32); ocsvm = IncrementalOCSVM(nu=0.15); xgb = OpenSetXGBoost(0.7)
     mgr.load_models(1, {'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb})
-    pipeline = SequentialHybridPipeline(ae, ocsvm, xgb)
+    pipeline = SequentialHybridPipeline(xgb=xgb, ae=ae, ocsvm=ocsvm)
     results = {'metrics': {}, 'unknown_stats': {}}
     
     print("\n--- Phase 1: Detection ---")
@@ -47,6 +47,7 @@ def session2_workflow():
     print("\n--- Phase 2: IL ---")
     X_old, y_old = load_replay_buffer(s1_train)
     pipeline.incremental_learning(X_train, y_train, X_old, y_old)
+    #pipeline.incremental_learning(X_train, y_train)
     
     print("\n--- Phase 3: Eval ---")
     final_preds, details_test = pipeline.predict(X_test, return_details=True)

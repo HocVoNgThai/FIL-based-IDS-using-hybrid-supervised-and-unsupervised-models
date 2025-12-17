@@ -31,7 +31,7 @@ def session1_workflow():
     
     ae = AETrainer(81, 32); ocsvm = IncrementalOCSVM(nu=0.15); xgb = OpenSetXGBoost(0.7)
     mgr.load_models(0, {'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb})
-    pipeline = SequentialHybridPipeline(ae, ocsvm, xgb)
+    pipeline = SequentialHybridPipeline(xgb=xgb, ae=ae, ocsvm=ocsvm)
     results = {'metrics': {}, 'unknown_stats': {}}
     
     print("\n--- Phase 1: Detection (Pre-IL) ---")
@@ -47,7 +47,7 @@ def session1_workflow():
     print("\n--- Phase 2: IL ---")
     X_old, y_old = load_replay_buffer(s0_train)
     pipeline.incremental_learning(X_train, y_train, X_old, y_old)
-    
+    #pipeline.incremental_learning(X_train, y_train)
     print("\n--- Phase 3: Eval (Post-IL) ---")
     final_preds, details_test = pipeline.predict(X_test, return_details=True)
     results['metrics']['Pipeline'] = evaluate_final_pipeline(y_test, final_preds, "Case1_PostIL", save_dir)

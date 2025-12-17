@@ -1,0 +1,197 @@
+import os
+import sys
+import numpy as np
+import matplotlib
+matplotlib.use('Agg') # Fix lỗi hiển thị
+import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.models import AETrainer, IncrementalOCSVM, OpenSetXGBoost
+from src.pipeline import SequentialHybridPipeline
+from src.utils import (
+    SessionDataLoader, SessionManager, 
+    plot_cm, get_label_name, calculate_unknown_metrics,
+    evaluate_final_pipeline
+)
+
+# --- CẤU HÌNH ---
+BASE_DATA_DIR = "merge1.4_3-4-5/case-from-3-incre-4class-incre-6class"
+GLOBAL_SCALER_PATH = "sessions/global_scaler.joblib"
+SAVE_ROOT = "results/comprehensive_eval"
+
+# Cấu hình Tối ưu (như đã bàn)
+PIPELINE_CONFIG = {
+    'CONF_HIGH': 0.90,   
+    'CONF_REJECT': 0.70, 
+    'GRAY_LOGIC': 'HYBRID_SOFT'
+}
+
+# --- CLASS PIPELINE TÙY BIẾN ĐỂ EVAL ---
+class EvalPipeline(SequentialHybridPipeline):
+    def predict(self, X, return_details=False):
+        print(f"   -> Processing {len(X)} samples with Optimized Logic...")
+        xgb_pred, xgb_conf = self.xgb.predict_with_confidence(X)
+        
+        ae_is_normal = self.ae.is_normal(X) if self.ae else None
+        ocsvm_is_normal = (self.ocsvm.decision_function(X) > 0) if self.ocsvm else None
+        
+        final_preds = []
+        for i in range(len(X)):
+            p_val = int(xgb_pred[i])
+            conf = xgb_conf[i]
+            
+            # 1. Low Confidence -> Unknown
+            if conf < PIPELINE_CONFIG['CONF_REJECT']:
+                final_preds.append("UNKNOWN")
+                continue
+            
+            # 2. Attack
+            if p_val != 0:
+                final_preds.append(self.label_map.get(p_val, "UNKNOWN"))
+            else:
+                # 3. Benign High Confidence
+                if conf >= PIPELINE_CONFIG['CONF_HIGH']:
+                    final_preds.append("BENIGN")
+                else:
+                    # 4. Gray Zone (Logic Hybrid Soft)
+                    is_safe = False
+                    if ae_is_normal[i]: is_safe = True
+                    elif ocsvm_is_normal[i] and conf > (PIPELINE_CONFIG['CONF_REJECT'] + 0.15): is_safe = True
+                    
+                    final_preds.append("BENIGN" if is_safe else "UNKNOWN")
+        
+        return (final_preds, None) if return_details else final_preds
+
+# --- HÀM HỖ TRỢ ---
+def load_models(case_id, mgr):
+    print(f"   -> Loading models from Case {case_id}...")
+    ae = AETrainer(81, 32)
+    ocsvm = IncrementalOCSVM(nu=0.15)
+    xgb = OpenSetXGBoost(0.7)
+    mgr.load_models(case_id, {'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb})
+    # Dùng EvalPipeline để áp dụng logic tối ưu
+    return SequentialHybridPipeline(xgb=xgb, ae=ae, ocsvm=ocsvm)
+
+def map_labels_for_pre_il(y_true_raw, unknown_target_labels):
+    """
+    Chuyển đổi các nhãn cụ thể (ví dụ 3 - Reconn) thành 'UNKNOWN'
+    để vẽ biểu đồ Pre-IL đúng chuẩn Open Set.
+    """
+    y_mapped = []
+    for val in y_true_raw:
+        if val in unknown_target_labels:
+            y_mapped.append("UNKNOWN") # Gom nhóm thành UNKNOWN
+        else:
+            y_mapped.append(get_label_name(val))
+    return y_mapped
+
+def run_evaluation():
+    print("🚀 STARTING COMPREHENSIVE EVALUATION (Logic Optimized + Correct Pre-IL CM)")
+    os.makedirs(SAVE_ROOT, exist_ok=True)
+    
+    loader = SessionDataLoader()
+    loader.load_scaler(GLOBAL_SCALER_PATH)
+    mgr = SessionManager()
+
+    # ==============================================================================
+    # 1. CASE 0: EVAL PHASE
+    # ==============================================================================
+    print(f"\n{'='*10} CASE 0: EVALUATION {'='*10}")
+    save_dir = os.path.join(SAVE_ROOT, "case0_eval")
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Load Data & Model
+    X_test, y_test = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "test_session0.parquet"))
+    X_test = loader.apply_scaling(X_test, fit=False)
+    pipeline = load_models(0, mgr)
+    
+    # Predict
+    preds = pipeline.predict(X_test)
+    evaluate_final_pipeline(y_test, preds, "Case0_Final", save_dir)
+
+    # ==============================================================================
+    # 2. CASE 1
+    # ==============================================================================
+    print(f"\n{'='*10} CASE 1: RECONN {'='*10}")
+    
+    # --- PHASE 1: PRE-IL (Detecting Unknown Reconn) ---
+    print(">>> Phase 1: Pre-IL (Target: Reconn -> UNKNOWN)")
+    save_dir_pre = os.path.join(SAVE_ROOT, "case1_phase1_pre_il")
+    os.makedirs(save_dir_pre, exist_ok=True)
+    
+    # Load Train Data (Chứa Reconn)
+    X_train1, y_train1 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "train_session1.parquet"))
+    X_train1 = loader.apply_scaling(X_train1, fit=False)
+    
+    # Dùng Model Case 0 (Chưa biết Reconn)
+    # pipeline vẫn là Case 0 từ bước trên
+    preds_pre = pipeline.predict(X_train1)
+    
+    # [QUAN TRỌNG] Map nhãn 3 (Reconn) thành "UNKNOWN" cho biểu đồ
+    y_true_mapped = map_labels_for_pre_il(y_train1, unknown_target_labels=[3])
+    
+    # Vẽ CM với nhãn đã map (True: UNKNOWN vs Pred: UNKNOWN)
+    print("   Generating mapped CM for Pre-IL...")
+    plot_cm(y_true_mapped, preds_pre, "CM Pipeline (Pre-IL) - Mapped", os.path.join(save_dir_pre, "cm_pre_il_mapped.png"))
+    
+    # Tính metrics unknown riêng
+    calculate_unknown_metrics(y_train1, preds_pre, unknown_label=3, save_dir=save_dir_pre, session_name="Case1_PreIL")
+
+    # --- PHASE 3: POST-IL ---
+    print("\n>>> Phase 3: Post-IL (Target: Reconn -> Reconn)")
+    save_dir_post = os.path.join(SAVE_ROOT, "case1_phase3_post_il")
+    os.makedirs(save_dir_post, exist_ok=True)
+    
+    X_test1, y_test1 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "test_session1.parquet"))
+    X_test1 = loader.apply_scaling(X_test1, fit=False)
+    
+    # Load Model Case 1 (Đã học Reconn)
+    pipeline = load_models(1, mgr)
+    preds_post = pipeline.predict(X_test1)
+    
+    evaluate_final_pipeline(y_test1, preds_post, "Case1_PostIL", save_dir_post)
+
+    # ==============================================================================
+    # 3. CASE 2
+    # ==============================================================================
+    print(f"\n{'='*10} CASE 2: MITM & DNS {'='*10}")
+    
+    # --- PHASE 1: PRE-IL ---
+    print(">>> Phase 1: Pre-IL (Target: MITM/DNS -> UNKNOWN)")
+    save_dir_pre = os.path.join(SAVE_ROOT, "case2_phase1_pre_il")
+    os.makedirs(save_dir_pre, exist_ok=True)
+    
+    X_train2, y_train2 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "train_session2.parquet"))
+    X_train2 = loader.apply_scaling(X_train2, fit=False)
+    
+    # Dùng Model Case 1 (Chưa biết MITM/DNS)
+    # pipeline vẫn là Case 1 từ bước trên
+    preds_pre = pipeline.predict(X_train2)
+    
+    # [QUAN TRỌNG] Map nhãn 4, 5 thành "UNKNOWN"
+    y_true_mapped = map_labels_for_pre_il(y_train2, unknown_target_labels=[4, 5])
+    
+    print("   Generating mapped CM for Pre-IL...")
+    plot_cm(y_true_mapped, preds_pre, "CM Pipeline (Pre-IL) - Mapped", os.path.join(save_dir_pre, "cm_pre_il_mapped.png"))
+    
+    calculate_unknown_metrics(y_train2, preds_pre, unknown_label=[4, 5], save_dir=save_dir_pre, session_name="Case2_PreIL")
+
+    # --- PHASE 3: POST-IL ---
+    print("\n>>> Phase 3: Post-IL")
+    save_dir_post = os.path.join(SAVE_ROOT, "case2_phase3_post_il")
+    os.makedirs(save_dir_post, exist_ok=True)
+    
+    X_test2, y_test2 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "test_session2.parquet"))
+    X_test2 = loader.apply_scaling(X_test2, fit=False)
+    
+    # Load Model Case 2
+    pipeline = load_models(2, mgr)
+    preds_post = pipeline.predict(X_test2)
+    
+    evaluate_final_pipeline(y_test2, preds_post, "Case2_PostIL", save_dir_post)
+    
+    print(f"\n🎉 COMPLETED. Results at: {SAVE_ROOT}")
+
+if __name__ == "__main__":
+    run_evaluation()

@@ -26,7 +26,7 @@ def session0_initial_training():
     ae = AETrainer(81, 32); ae.train_on_known_data(X_train[y_train==0], epochs=100)
     ocsvm = IncrementalOCSVM(nu=0.15); ocsvm.train(X_train[y_train==0])
     xgb = OpenSetXGBoost(0.7); xgb.train(X_train, y_train, is_incremental=False)
-    pipeline = SequentialHybridPipeline(ae, ocsvm, xgb)
+    pipeline = SequentialHybridPipeline(xgb=xgb, ae=ae, ocsvm=ocsvm)
     
     print("\n--- EVAL CASE 0 ---")
     metrics = {}

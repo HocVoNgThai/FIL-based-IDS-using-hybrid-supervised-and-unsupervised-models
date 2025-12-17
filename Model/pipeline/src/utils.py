@@ -31,11 +31,15 @@ class ResourceTracker:
             self.history['time'].append(current_time)
             self.history['cpu'].append(psutil.cpu_percent())
             self.history['ram'].append(psutil.virtual_memory().percent)
+            
             gpu_load = 0; gpu_mem = 0
             try:
                 if GPUtil and GPUtil.getGPUs(): 
-                    gpu = GPUtil.getGPUs()[0]; gpu_load = gpu.load * 100; gpu_mem = gpu.memoryUsed
+                    gpu = GPUtil.getGPUs()[0]
+                    gpu_load = gpu.load * 100
+                    gpu_mem = gpu.memoryUsed
             except: pass
+            
             self.history['gpu'].append(gpu_load)
             self.history['gpu_mem'].append(gpu_mem)
             time.sleep(1)
@@ -51,7 +55,17 @@ class ResourceTracker:
         self.tracking = False
         if self.thread: self.thread.join()
         duration = time.time() - self.start_time
-        return {'duration': duration, 'avg_cpu': np.mean(self.history['cpu']) if self.history['cpu'] else 0, 'max_ram': np.max(self.history['ram']) if self.history['ram'] else 0, 'history': self.history}
+        
+        # [UPDATE] Tính thêm avg_gpu để vẽ biểu đồ
+        avg_gpu = np.mean(self.history['gpu']) if self.history['gpu'] else 0
+        
+        return {
+            'duration': duration,
+            'avg_cpu': np.mean(self.history['cpu']) if self.history['cpu'] else 0,
+            'max_ram': np.max(self.history['ram']) if self.history['ram'] else 0,
+            'avg_gpu': avg_gpu, # New metric
+            'history': self.history
+        }
 
 # ==================== 2. IL METRICS (Nâng cao) ====================
 class ILMetrics:
@@ -88,22 +102,70 @@ class ILMetrics:
 # ==================== 3. PLOTTING FUNCTIONS (All Types) ====================
 
 def plot_resource_usage(log, save_path):
-    """Biểu đồ cột tổng hợp"""
-    cases = list(log.keys()); times = [log[s]['duration'] for s in cases]
-    cpus = [log[s]['avg_cpu'] for s in cases]; rams = [log[s]['max_ram'] for s in cases]
-    fig, ax1 = plt.subplots(figsize=(10, 6))
-    ax1.bar(cases, times, color='skyblue', alpha=0.5, label='Time (s)')
-    ax1.set_ylabel('Time (s)', color='blue')
+    """Biểu đồ cột tổng hợp (Time, CPU, RAM, GPU) có hiển thị giá trị được căn chỉnh đẹp mắt"""
+    cases = list(log.keys())
+    times = [log[s]['duration'] for s in cases]
+    cpus = [log[s]['avg_cpu'] for s in cases]
+    rams = [log[s]['max_ram'] for s in cases]
+    gpus = [log[s].get('avg_gpu', 0) for s in cases]
+
+    fig, ax1 = plt.subplots(figsize=(12, 8)) # Tăng chiều cao lên 8
+    
+    # --- 1. Bar Chart (Time) ---
+    bars = ax1.bar(cases, times, color='#87CEEB', alpha=0.3, label='Time (s)', width=0.5)
+    ax1.set_ylabel('Time (s)', color='blue', fontweight='bold', fontsize=12)
+    ax1.tick_params(axis='y', labelcolor='blue')
+    
+    # In giá trị Time (nằm giữa cột)
+    for bar in bars:
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height/2, 
+                 f'{height:.1f}s', ha='center', va='center', color='blue', fontweight='bold', fontsize=11)
+
+    # --- 2. Line Charts (CPU, RAM, GPU) ---
     ax2 = ax1.twinx()
-    ax2.plot(cases, cpus, 'r-o', label='CPU %', linewidth=2)
-    ax2.plot(cases, rams, 'g-x', label='RAM %', linewidth=2)
-    ax2.set_ylabel('Usage %', color='black'); ax2.set_ylim(0, 100)
-    # Legend gộp
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax2.legend(lines1 + lines2, labels1 + labels2, loc='upper center', bbox_to_anchor=(0.5, 1.1), ncol=3)
-    plt.title('Resource Usage Summary'); plt.tight_layout()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
+    
+    # Vẽ các đường với style rõ ràng hơn
+    line_cpu = ax2.plot(cases, cpus, 'r-o', label='CPU %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
+    line_ram = ax2.plot(cases, rams, 'g-s', label='RAM %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
+    line_gpu = ax2.plot(cases, gpus, 'm-^', label='GPU %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
+    
+    ax2.set_ylabel('Usage %', color='black', fontweight='bold', fontsize=12)
+    ax2.set_ylim(0, 115) # Tăng trần trục Y để thoáng hơn
+    ax2.tick_params(axis='y', labelcolor='black')
+
+    # --- In giá trị % với nền trắng (bbox) để dễ đọc và tránh rối ---
+    bbox_props = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7)
+
+    for i, val in enumerate(cpus):
+        # CPU: In phía trên điểm
+        ax2.text(i, val + 3, f'{val:.1f}%', color='#D32F2F', ha='center', va='bottom', 
+                 fontweight='bold', fontsize=10, bbox=bbox_props)
+    
+    for i, val in enumerate(rams):
+        # RAM: In phía dưới điểm (để tách khỏi CPU nếu giá trị gần nhau)
+        ax2.text(i, val - 4, f'{val:.1f}%', color='#388E3C', ha='center', va='top', 
+                 fontweight='bold', fontsize=10, bbox=bbox_props)
+        
+    for i, val in enumerate(gpus):
+        if val > 0.5: # Chỉ in nếu GPU được dùng đáng kể
+            # GPU: In lệch sang phải một chút
+            ax2.text(i + 0.05, val, f'{val:.1f}%', color='#9C27B0', ha='left', va='center', 
+                     fontweight='bold', fontsize=10, bbox=bbox_props)
+
+    # --- Legend & Title ---
+    lines = [bars] + line_cpu + line_ram + line_gpu
+    labels = [l.get_label() for l in lines]
+    
+    # Đặt Legend lên đỉnh, bên ngoài vùng vẽ chính
+    ax2.legend(lines, labels, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=4, frameon=True, fontsize=11)
+    
+    plt.title('Resource Usage Summary (Time & Hardware)', fontsize=16, pad=40, fontweight='bold') # Pad lớn để chừa chỗ cho Legend
+    plt.tight_layout()
+    
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path, dpi=300) # Tăng DPI cho ảnh nét
+    plt.close()
 
 def plot_detailed_resource_usage(history_dict, case_name, save_path):
     """Biểu đồ đường chi tiết theo thời gian"""
@@ -115,14 +177,41 @@ def plot_detailed_resource_usage(history_dict, case_name, save_path):
     plt.tight_layout(); os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
 
 def plot_il_metrics_trends(il, save_path):
-    """Biểu đồ biến động F, BWT, AvgAcc"""
-    steps = range(len(il.history['Avg_Acc'])); labels = [f"Case {i}" for i in steps]
+    """Biểu đồ biến động F, BWT, AvgAcc với Text Annotations"""
+    steps = range(len(il.history['Avg_Acc']))
+    labels = [f"Case {i}" for i in steps]
+    
     plt.figure(figsize=(10, 6))
-    plt.plot(steps, il.history['Avg_Acc'], 'o-', label='Avg Accuracy')
-    plt.plot(steps, il.history['BWT'], 's--', label='Backward Transfer (BWT)')
-    plt.plot(steps, il.history['Forgetting'], 'x-.', label='Forgetting Measure (F)')
-    plt.title('Incremental Learning Metrics Evolution'); plt.xticks(steps, labels); plt.grid(True, alpha=0.3); plt.legend()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
+    
+    # Vẽ các đường
+    plt.plot(steps, il.history['Avg_Acc'], 'o-', label='Avg Accuracy', linewidth=2, color='#1f77b4')
+    plt.plot(steps, il.history['BWT'], 's--', label='Backward Transfer (BWT)', linewidth=2, color='#ff7f0e')
+    plt.plot(steps, il.history['Forgetting'], 'x-.', label='Forgetting Measure (F)', linewidth=2, color='#2ca02c')
+    
+    # In giá trị lên từng điểm
+    for i in steps:
+        # Avg Acc
+        val_acc = il.history['Avg_Acc'][i]
+        plt.text(i, val_acc + 0.005, f"{val_acc:.4f}", ha='center', va='bottom', color='#1f77b4', fontweight='bold', fontsize=9)
+        
+        # BWT
+        val_bwt = il.history['BWT'][i]
+        plt.text(i, val_bwt - 0.015, f"{val_bwt:.4f}", ha='center', va='top', color='#ff7f0e', fontweight='bold', fontsize=9)
+        
+        # Forgetting
+        val_f = il.history['Forgetting'][i]
+        plt.text(i, val_f + 0.005, f"{val_f:.4f}", ha='center', va='bottom', color='#2ca02c', fontweight='bold', fontsize=9)
+
+    plt.title('Incremental Learning Metrics Evolution')
+    plt.xlabel('Session')
+    plt.ylabel('Score')
+    plt.xticks(steps, labels)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path)
+    plt.close()
 
 def plot_il_matrix(il, save_path):
     """Heatmap Accuracy"""
@@ -136,47 +225,88 @@ def plot_il_matrix(il, save_path):
 
 def plot_all_models_performance(all_metrics_history, save_dir):
     """
-    Vẽ 4 biểu đồ (Accuracy, Precision, Recall, F1).
-    Mỗi biểu đồ so sánh 4 đường: Pipeline, XGBoost, AE, OCSVM qua các Case.
+    Vẽ 4 biểu đồ cột (Bar Charts) riêng biệt cho từng Model (Pipeline, XGBoost, AE, OCSVM).
+    Mỗi biểu đồ so sánh 4 chỉ số (Accuracy, Precision, Recall, F1) qua các Case.
+    Hiển thị giá trị cụ thể trên đầu cột.
     """
     cases = list(all_metrics_history.keys()) # ['Case 0', 'Case 1', 'Case 2']
     models = ['Pipeline', 'XGBoost', 'AE', 'OCSVM']
-    metrics_map = {'Accuracy': 'accuracy', 'Precision': 'precision', 'Recall': 'recall', 'F1-Score': 'f1-score'}
     
-    # Chuẩn bị dữ liệu
-    data = {m: {mod: [] for mod in models} for m in metrics_map}
+    # Mapping tên hiển thị sang key trong dict
+    metrics_map = {
+        'Accuracy': 'accuracy', 
+        'Precision': 'precision', 
+        'Recall': 'recall', 
+        'F1-Score': 'f1-score'
+    }
+    metric_names = list(metrics_map.keys())
+    
+    # 1. Chuẩn bị dữ liệu: data[model][metric_name] = [val_c0, val_c1, val_c2]
+    data = {mod: {m: [] for m in metric_names} for mod in models}
     
     for c in cases:
         for mod in models:
             rep = all_metrics_history[c].get(mod, {})
-            # Lấy giá trị weighted avg
-            if mod in ['AE', 'OCSVM'] and 'weighted avg' not in rep:
-                 # AE/OCSVM có thể trả về report binary (0, 1), lấy weighted avg
-                 pass 
             
-            data['Accuracy'][mod].append(rep.get('accuracy', 0))
-            data['Precision'][mod].append(rep.get('weighted avg', {}).get('precision', 0))
-            data['Recall'][mod].append(rep.get('weighted avg', {}).get('recall', 0))
-            data['F1-Score'][mod].append(rep.get('weighted avg', {}).get('f1-score', 0))
+            # Lấy giá trị (Mặc định 0 nếu không có)
+            acc = rep.get('accuracy', 0)
+            prec = rep.get('weighted avg', {}).get('precision', 0)
+            rec = rep.get('weighted avg', {}).get('recall', 0)
+            f1 = rep.get('weighted avg', {}).get('f1-score', 0)
+            
+            data[mod]['Accuracy'].append(acc)
+            data[mod]['Precision'].append(prec)
+            data[mod]['Recall'].append(rec)
+            data[mod]['F1-Score'].append(f1)
 
-    # Vẽ 4 subplots
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    # 2. Vẽ 4 Subplots
+    fig, axes = plt.subplots(2, 2, figsize=(20, 14)) # Kích thước lớn để chứa text
     axes = axes.flatten()
-    x = range(len(cases))
     
-    for i, (metric_name, metric_key) in enumerate(metrics_map.items()):
+    x = np.arange(len(cases))
+    width = 0.2 # Độ rộng của mỗi cột con
+    
+    # Màu sắc cho 4 metrics
+    colors = ['#3498db', '#e67e22', '#2ecc71', '#e74c3c'] # Xanh, Cam, Xanh lá, Đỏ
+
+    for i, mod in enumerate(models):
         ax = axes[i]
-        for mod in models:
-            ax.plot(x, data[metric_name][mod], marker='o', label=mod, linewidth=2)
         
-        ax.set_title(f'{metric_name} Evolution')
-        ax.set_xticks(x); ax.set_xticklabels(cases)
-        ax.set_ylim(0, 1.05); ax.grid(True, alpha=0.3); ax.legend()
+        # Vẽ nhóm cột cho từng metric
+        for j, metric in enumerate(metric_names):
+            values = data[mod][metric]
+            
+            # Tính toán vị trí cột để chúng nằm cạnh nhau
+            # j=0 -> -1.5w, j=1 -> -0.5w, j=2 -> 0.5w, j=3 -> 1.5w
+            offset = x + (j - 1.5) * width 
+            
+            rects = ax.bar(offset, values, width, label=metric, color=colors[j])
+            
+            # In giá trị lên đầu mỗi cột
+            for rect in rects:
+                height = rect.get_height()
+                if height > 0: # Chỉ in nếu giá trị > 0
+                    ax.text(rect.get_x() + rect.get_width()/2., height + 0.02,
+                            f'{height:.4f}',
+                            ha='center', va='bottom', fontsize=8, fontweight='bold')
+
+        ax.set_title(f'{mod} Performance Evolution', fontweight='bold', fontsize=14)
+        ax.set_xticks(x)
+        ax.set_xticklabels(cases, fontsize=11)
+        ax.set_ylabel('Score', fontsize=11)
+        ax.set_ylim(0, 1.35) # Tăng trần trục Y để chứa text xoay dọc
+        ax.grid(axis='y', alpha=0.3)
+        
+        # Legend
+        ax.legend(loc='lower left', ncol=2, fontsize=10)
 
     plt.tight_layout()
     os.makedirs(save_dir, exist_ok=True)
-    plt.savefig(f"{save_dir}/all_models_comparison.png")
+    
+    save_path = f"{save_dir}/all_models_comparison_bar.png"
+    plt.savefig(save_path)
     plt.close()
+    print(f"Comparison bar charts saved to {save_path}")
 
 def plot_unknown_detection_performance(unknown_stats, save_dir):
     """Biểu đồ hiệu suất phát hiện Unknown (Pre-IL)"""
@@ -357,3 +487,105 @@ def evaluate_gray_zone(y_true, xgb_pred, xgb_conf, ae_pred, ocsvm_pred, c_min, c
     plot_binary_cm(y_bin, ae_g, f"AE Gray - {sess}", f"{save_dir}/cm_ae_gray_{sess}.png")
     print(">>> OCSVM Gray:"); print(classification_report(y_bin, oc_g, target_names=['Abn', 'Nor'], digits=4, zero_division=0))
     plot_binary_cm(y_bin, oc_g, f"OCSVM Gray - {sess}", f"{save_dir}/cm_ocsvm_gray_{sess}.png")
+
+def plot_scenarios_comparison(results_dict, save_path):
+    """
+    results_dict: {'XGB Only': {'f1': 0.8}, 'XGB+AE': {'f1': 0.85}, ...}
+    """
+    scenarios = list(results_dict.keys())
+    metrics = ['Precision', 'Recall', 'F1-Score']
+    
+    # Chuẩn bị data
+    data = {m: [] for m in metrics}
+    for sc in scenarios:
+        report = results_dict[sc]
+        data['Precision'].append(report['weighted avg']['precision'])
+        data['Recall'].append(report['weighted avg']['recall'])
+        data['F1-Score'].append(report['weighted avg']['f1-score'])
+        
+    x = np.arange(len(scenarios))
+    width = 0.25
+    
+    plt.figure(figsize=(12, 7))
+    
+    # Vẽ 3 cột
+    plt.bar(x - width, data['Precision'], width, label='Precision', color='#3498db')
+    plt.bar(x, data['Recall'], width, label='Recall', color='#2ecc71')
+    plt.bar(x + width, data['F1-Score'], width, label='F1-Score', color='#e74c3c')
+    
+    plt.xlabel('Ablation Scenarios')
+    plt.ylabel('Score')
+    plt.title('Performance Comparison of Different Pipeline Configurations (Case 2)')
+    plt.xticks(x, scenarios)
+    plt.ylim(0, 1.15)
+    plt.legend(loc='lower right')
+    plt.grid(axis='y', alpha=0.3)
+    
+    # Thêm text giá trị F1 lên cột
+    for i in range(len(scenarios)):
+
+        plt.text(i - width, data['Precision'][i] + 0.01, 
+                 f"{data['Precision'][i]:.4f}", 
+                 ha='center', va='bottom', fontweight='bold', fontsize=9, color='black')
+        
+        plt.text(i, data['Recall'][i] + 0.01, 
+                 f"{data['Recall'][i]:.4f}", 
+                 ha='center', va='bottom', fontweight='bold', fontsize=9, color='black')
+
+        plt.text(i + width, data['F1-Score'][i] + 0.01, 
+                 f"{data['F1-Score'][i]:.4f}", 
+                 ha='center', va='bottom', fontweight='bold', fontsize=9, color='black')
+        
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path)
+    plt.close()
+    print(f"Comparison chart saved to {save_path}")
+
+def plot_ablation_evolution(ablation_history, save_dir):
+    """
+    ablation_history: {
+        'Case 0': {'XGB Only': rep, 'Full Pipeline': rep, ...},
+        'Case 1': {...},
+        'Case 2': {...}
+    }
+    """
+    cases = sorted(list(ablation_history.keys())) # ['Case 0', 'Case 1', 'Case 2']
+    scenarios = list(ablation_history[cases[0]].keys()) # ['XGB Only', 'Full Pipeline'...]
+    metrics = ['Precision', 'Recall', 'F1-Score'] # Bỏ Accuracy nếu muốn, hoặc thêm vào
+    
+    # Chuẩn bị dữ liệu: data[metric][scenario] = [val_c0, val_c1, val_c2]
+    data = {m: {sc: [] for sc in scenarios} for m in metrics}
+    
+    for c in cases:
+        for sc in scenarios:
+            rep = ablation_history[c].get(sc, {})
+            data['Precision'][sc].append(rep.get('weighted avg', {}).get('precision', 0))
+            data['Recall'][sc].append(rep.get('weighted avg', {}).get('recall', 0))
+            data['F1-Score'][sc].append(rep.get('weighted avg', {}).get('f1-score', 0))
+
+    # Vẽ biểu đồ
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    x = range(len(cases))
+    markers = ['o', 's', '^', 'D']
+    colors = ['#e74c3c', '#3498db', '#2ecc71', '#9b59b6'] # Red, Blue, Green, Purple
+    
+    for i, metric in enumerate(metrics):
+        ax = axes[i]
+        for j, sc in enumerate(scenarios):
+            ax.plot(x, data[metric][sc], marker=markers[j], label=sc, color=colors[j], linewidth=2.5)
+            
+            # Annotate điểm cuối
+            if data[metric][sc]:
+                last_val = data[metric][sc][-1]
+                ax.text(x[-1], last_val + 0.01, f'{last_val:.2f}', color=colors[j], fontweight='bold', ha='left')
+
+        ax.set_title(f'{metric} Evolution')
+        ax.set_xticks(x); ax.set_xticklabels(cases)
+        ax.set_ylim(0.6, 1.05); ax.grid(True, alpha=0.3)
+        if i == 0: ax.legend(loc='lower left') # Chỉ hiện legend ở hình đầu cho gọn
+
+    plt.tight_layout()
+    os.makedirs(save_dir, exist_ok=True)
+    plt.savefig(f"{save_dir}/ablation_evolution.png")
+    plt.close()
+    print(f"Ablation evolution chart saved to {save_dir}/ablation_evolution.png")
