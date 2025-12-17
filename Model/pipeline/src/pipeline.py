@@ -52,7 +52,7 @@ class SequentialHybridPipeline:
                         # Logic cũ: ae_is_normal[i] and ocsvm_is_normal[i] (Quá chặt)
                         # Logic MỚI: Chỉ cần 1 trong 2 bảo là Normal thì tạm tin là Normal
                         # (Vì XGB đã bảo là Benign rồi, ta cần bằng chứng mạnh để bác bỏ nó)
-                        if ae_is_normal[i] or ocsvm_is_normal[i]: 
+                        if ae_is_normal[i] and ocsvm_is_normal[i]: 
                             is_safe = True
                         else:
                             # Cả 2 đều bảo là Abnormal -> Chắc chắn là Unknown

@@ -122,7 +122,7 @@ class OpenSetXGBoost:
         if not is_incremental:
             print(f"XGBoost Initial Train ({len(X)} samples)...")
             self.model = xgb.XGBClassifier(
-                n_estimators=700, max_depth=6, learning_rate=0.01, 
+                n_estimators=800, max_depth=6, learning_rate=0.01, 
                 objective='multi:softprob', num_class=self.max_classes, 
                 n_jobs=-1, random_state=42, early_stopping_rounds=150
             )
@@ -130,7 +130,7 @@ class OpenSetXGBoost:
         else:
             print(f"XGBoost Incremental Update ({len(X)} samples)...")
             cur_est = self.model.get_booster().num_boosted_rounds()
-            self.model.set_params(n_estimators=cur_est + 100)
+            self.model.set_params(n_estimators=cur_est + 200)
             self.model.fit(X_train, y_train, sample_weight=w_train, eval_set=[(X_val, y_val)], verbose=False, xgb_model=self.model.get_booster())
 
     def predict_with_confidence(self, X):

@@ -102,14 +102,14 @@ class ILMetrics:
 # ==================== 3. PLOTTING FUNCTIONS (All Types) ====================
 
 def plot_resource_usage(log, save_path):
-    """Biểu đồ cột tổng hợp (Time, CPU, RAM, GPU) có hiển thị giá trị được căn chỉnh đẹp mắt"""
+    """Biểu đồ cột tổng hợp (Time, CPU, RAM, GPU) với logic hiển thị text thông minh không chồng chéo"""
     cases = list(log.keys())
     times = [log[s]['duration'] for s in cases]
     cpus = [log[s]['avg_cpu'] for s in cases]
     rams = [log[s]['max_ram'] for s in cases]
     gpus = [log[s].get('avg_gpu', 0) for s in cases]
 
-    fig, ax1 = plt.subplots(figsize=(12, 8)) # Tăng chiều cao lên 8
+    fig, ax1 = plt.subplots(figsize=(12, 8))
     
     # --- 1. Bar Chart (Time) ---
     bars = ax1.bar(cases, times, color='#87CEEB', alpha=0.3, label='Time (s)', width=0.5)
@@ -125,46 +125,55 @@ def plot_resource_usage(log, save_path):
     # --- 2. Line Charts (CPU, RAM, GPU) ---
     ax2 = ax1.twinx()
     
-    # Vẽ các đường với style rõ ràng hơn
+    # Vẽ các đường
     line_cpu = ax2.plot(cases, cpus, 'r-o', label='CPU %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
     line_ram = ax2.plot(cases, rams, 'g-s', label='RAM %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
     line_gpu = ax2.plot(cases, gpus, 'm-^', label='GPU %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
     
     ax2.set_ylabel('Usage %', color='black', fontweight='bold', fontsize=12)
-    ax2.set_ylim(0, 115) # Tăng trần trục Y để thoáng hơn
+    ax2.set_ylim(0, 115) 
     ax2.tick_params(axis='y', labelcolor='black')
 
-    # --- In giá trị % với nền trắng (bbox) để dễ đọc và tránh rối ---
+    # --- LOGIC HIỂN THỊ TEXT THÔNG MINH (Smart Text Placement) ---
     bbox_props = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7)
 
-    for i, val in enumerate(cpus):
-        # CPU: In phía trên điểm
-        ax2.text(i, val + 3, f'{val:.1f}%', color='#D32F2F', ha='center', va='bottom', 
-                 fontweight='bold', fontsize=10, bbox=bbox_props)
-    
-    for i, val in enumerate(rams):
-        # RAM: In phía dưới điểm (để tách khỏi CPU nếu giá trị gần nhau)
-        ax2.text(i, val - 4, f'{val:.1f}%', color='#388E3C', ha='center', va='top', 
-                 fontweight='bold', fontsize=10, bbox=bbox_props)
+    for i, (c, r, g) in enumerate(zip(cpus, rams, gpus)):
+        # Khoảng cách tối thiểu để tránh dính nhau
+        vertical_spacing = 6 
         
-    for i, val in enumerate(gpus):
-        if val > 0.5: # Chỉ in nếu GPU được dùng đáng kể
-            # GPU: In lệch sang phải một chút
-            ax2.text(i + 0.05, val, f'{val:.1f}%', color='#9C27B0', ha='left', va='center', 
+        # 1. Xử lý CPU và RAM (Tránh đè nhau theo chiều dọc)
+        # Nguyên tắc: Cái nào cao hơn thì text nằm trên, cái nào thấp hơn thì text nằm dưới
+        if c >= r:
+            # CPU cao hơn -> Text CPU ở trên, RAM ở dưới
+            ax2.text(i, c + 4, f'{c:.1f}%', color='#D32F2F', ha='center', va='bottom', 
+                     fontweight='bold', fontsize=10, bbox=bbox_props)
+            ax2.text(i, r - 4, f'{r:.1f}%', color='#388E3C', ha='center', va='top', 
+                     fontweight='bold', fontsize=10, bbox=bbox_props)
+        else:
+            # RAM cao hơn -> Text RAM ở trên, CPU ở dưới
+            ax2.text(i, r + 4, f'{r:.1f}%', color='#388E3C', ha='center', va='bottom', 
+                     fontweight='bold', fontsize=10, bbox=bbox_props)
+            ax2.text(i, c - 4, f'{c:.1f}%', color='#D32F2F', ha='center', va='top', 
+                     fontweight='bold', fontsize=10, bbox=bbox_props)
+
+        # 2. Xử lý GPU (Tránh đè vào CPU/RAM)
+        if g > 0.5:
+            # GPU luôn đẩy sang bên phải một chút (offset x = 0.15)
+            # Điều này giúp nó thoát khỏi trục dọc của CPU/RAM
+            ax2.text(i + 0.15, g, f'{g:.1f}%', color='#9C27B0', ha='left', va='center', 
                      fontweight='bold', fontsize=10, bbox=bbox_props)
 
     # --- Legend & Title ---
     lines = [bars] + line_cpu + line_ram + line_gpu
     labels = [l.get_label() for l in lines]
     
-    # Đặt Legend lên đỉnh, bên ngoài vùng vẽ chính
     ax2.legend(lines, labels, loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=4, frameon=True, fontsize=11)
     
-    plt.title('Resource Usage Summary (Time & Hardware)', fontsize=16, pad=40, fontweight='bold') # Pad lớn để chừa chỗ cho Legend
+    plt.title('Resource Usage Summary (Time & Hardware)', fontsize=16, pad=40, fontweight='bold')
     plt.tight_layout()
     
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path, dpi=300) # Tăng DPI cho ảnh nét
+    plt.savefig(save_path, dpi=300)
     plt.close()
 
 def plot_detailed_resource_usage(history_dict, case_name, save_path):
@@ -589,3 +598,59 @@ def plot_ablation_evolution(ablation_history, save_dir):
     plt.savefig(f"{save_dir}/ablation_evolution.png")
     plt.close()
     print(f"Ablation evolution chart saved to {save_dir}/ablation_evolution.png")
+
+def plot_unknown_detection_comparison(results_data, save_path):
+    """
+    Vẽ biểu đồ cột nhóm so sánh Unknown Detection Rate giữa các kịch bản ở Case 1 và Case 2.
+    
+    results_data format:
+    {
+        "XGB Only":      {"Case 1": 0.55, "Case 2": 0.60},
+        "Full Pipeline": {"Case 1": 0.85, "Case 2": 0.90},
+        ...
+    }
+    """
+    scenarios = list(results_data.keys())
+    cases = ['Case 1', 'Case 2']
+    
+    # Chuẩn bị dữ liệu vẽ
+    case1_vals = [results_data[sc].get('Case 1', 0) for sc in scenarios]
+    case2_vals = [results_data[sc].get('Case 2', 0) for sc in scenarios]
+    
+    x = np.arange(len(scenarios))  # Vị trí các nhóm trên trục X
+    width = 0.35  # Độ rộng của mỗi cột
+
+    fig, ax = plt.subplots(figsize=(12, 7))
+    
+    # Vẽ 2 nhóm cột
+    rects1 = ax.bar(x - width/2, case1_vals, width, label='Case 1 (Target: Reconn)', color='#3498db')
+    rects2 = ax.bar(x + width/2, case2_vals, width, label='Case 2 (Target: MITM/DNS)', color='#e74c3c')
+
+    # Thêm nhãn, tiêu đề
+    ax.set_ylabel('Detection Rate (Recall of New Attacks as UNKNOWN)', fontweight='bold')
+    ax.set_xlabel('Ablation Scenarios', fontweight='bold')
+    ax.set_title('Unknown Threat Detection Comparison (Case 1 vs Case 2)', fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(scenarios)
+    ax.set_ylim(0, 1.15) # Tăng trần để chứa text
+    ax.legend()
+    ax.grid(axis='y', alpha=0.3)
+
+    # Hàm phụ để in giá trị lên đầu cột
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(f'{height:.1%}',
+                        xy=(rect.get_x() + rect.get_width() / 2, height),
+                        xytext=(0, 3),  # 3 points vertical offset
+                        textcoords="offset points",
+                        ha='center', va='bottom', fontweight='bold')
+
+    autolabel(rects1)
+    autolabel(rects2)
+
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path)
+    plt.close()
+    print(f"Unknown detection comparison chart saved to {save_path}")
