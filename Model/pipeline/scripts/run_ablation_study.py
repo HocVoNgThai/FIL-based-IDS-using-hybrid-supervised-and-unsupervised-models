@@ -17,7 +17,7 @@ from src.utils import (
 )
 
 # Cấu hình đường dẫn
-BASE_DATA_DIR = "merge1.4_3-4-5/case-from-3-incre-4class-incre-6class"
+BASE_DATA_DIR = "merge1.4_3-4-5/Scenario-from-3-incre-4class-incre-6class"
 GLOBAL_SCALER_PATH = "sessions/global_scaler.joblib"
 SAVE_DIR = "results/ablation_study"
 
@@ -28,44 +28,44 @@ def run_ablation_full():
     # Biến lưu trữ kết quả toàn cục
     ablation_history = {}
     
-    # Biến lưu kết quả Unknown Detection: { 'XGB Only': {'Case 1': 0.5, 'Case 2': 0.6}, ... }
+    # Biến lưu kết quả Unknown Detection: { 'XGB Only': {'Scenario 1': 0.5, 'Scenario 2': 0.6}, ... }
     unknown_detection_results = {
         "XGB Only": {}, "XGB + AE": {}, "XGB + OCSVM": {}, "Full Pipeline": {}
     }
     
-    cases = [0, 1, 2]
+    Scenarios = [0, 1, 2]
     
     loader = SessionDataLoader()
     loader.load_scaler(GLOBAL_SCALER_PATH)
     mgr = SessionManager()
     
-    for case_id in cases:
-        print(f"\n{'='*40}\n PROCESSING CASE {case_id}\n{'='*40}")
-        case_name = f"Case {case_id}"
-        ablation_history[case_name] = {}
+    for Scenario_id in Scenarios:
+        print(f"\n{'='*40}\n PROCESSING Scenario {Scenario_id}\n{'='*40}")
+        Scenario_name = f"Scenario {Scenario_id}"
+        ablation_history[Scenario_name] = {}
         
         # ==============================================================================
-        # PHẦN 1: UNKNOWN DETECTION TEST (Chỉ chạy cho Case 1 và 2)
+        # PHẦN 1: UNKNOWN DETECTION TEST (Chỉ chạy cho Scenario 1 và 2)
         # Mục tiêu: Dùng model cũ để bắt các nhãn mới trong tập Train hiện tại
         # ==============================================================================
-        if case_id > 0:
+        if Scenario_id > 0:
             print(f"   [Phase 1] Testing Unknown Detection Capability (Pre-IL)...")
             
             # 1.1 Xác định nhãn mới cần bắt
-            target_unknown_labels = [3] if case_id == 1 else [4, 5]
+            target_unknown_labels = [3] if Scenario_id == 1 else [4, 5]
             
             # 1.2 Load Data Train (Chứa nhãn mới)
-            train_path = os.path.join(BASE_DATA_DIR, f"train_session{case_id}.parquet")
+            train_path = os.path.join(BASE_DATA_DIR, f"train_session{Scenario_id}.parquet")
             X_train_raw, y_train_raw = loader.load_data_raw(train_path)
             X_train = loader.apply_scaling(X_train_raw, fit=False)
             
-            # 1.3 Load Models CŨ (Case trước đó)
-            prev_case = case_id - 1
-            print(f"      -> Loading models from Case {prev_case}...")
+            # 1.3 Load Models CŨ (Scenario trước đó)
+            prev_Scenario = Scenario_id - 1
+            print(f"      -> Loading models from Scenario {prev_Scenario}...")
             ae_old = AETrainer(81, 32)
             ocsvm_old = IncrementalOCSVM(nu=0.15)
             xgb_old = OpenSetXGBoost(0.7)
-            mgr.load_models(prev_case, {'ae.pt': ae_old, 'ocsvm.pkl': ocsvm_old, 'xgb.pkl': xgb_old})
+            mgr.load_models(prev_Scenario, {'ae.pt': ae_old, 'ocsvm.pkl': ocsvm_old, 'xgb.pkl': xgb_old})
             
             # 1.4 Định nghĩa 4 kịch bản với model CŨ
             scenarios_old = {
@@ -94,30 +94,30 @@ def run_ablation_full():
                 else:
                     detection_rate = 0.0
                 
-                unknown_detection_results[sc_name][f"Case {case_id}"] = detection_rate
+                unknown_detection_results[sc_name][f"Scenario {Scenario_id}"] = detection_rate
                 print(f"      -> {sc_name}: Detected {detection_rate:.2%} of new attacks as UNKNOWN")
 
         # ==============================================================================
         # PHẦN 2: STANDARD EVALUATION (Post-IL)
-        # Mục tiêu: Đánh giá hiệu năng phân loại sau khi đã học xong Case hiện tại
+        # Mục tiêu: Đánh giá hiệu năng phân loại sau khi đã học xong Scenario hiện tại
         # ==============================================================================
         print(f"   [Phase 2] Standard Evaluation (Post-IL)...")
         
         # 2.1 Load Data Test
-        test_path = os.path.join(BASE_DATA_DIR, f"test_session{case_id}.parquet")
+        test_path = os.path.join(BASE_DATA_DIR, f"test_session{Scenario_id}.parquet")
         X_test_raw, y_test_raw = loader.load_data_raw(test_path)
         X_test = loader.apply_scaling(X_test_raw, fit=False)
         y_str_test = [get_label_name(y) for y in y_test_raw]
         
-        # 2.2 Load Models HIỆN TẠI (Case này)
-        print(f"      -> Loading models for Case {case_id}...")
+        # 2.2 Load Models HIỆN TẠI (Scenario này)
+        print(f"      -> Loading models for Scenario {Scenario_id}...")
         ae = AETrainer(81, 32)
         ocsvm = IncrementalOCSVM(nu=0.15)
         xgb = OpenSetXGBoost(0.7)
         try:
-            mgr.load_models(case_id, {'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb})
+            mgr.load_models(Scenario_id, {'ae.pt': ae, 'ocsvm.pkl': ocsvm, 'xgb.pkl': xgb})
         except Exception as e:
-            print(f"      [!] Error loading models: {e}. Skipping eval for this case.")
+            print(f"      [!] Error loading models: {e}. Skipping eval for this Scenario.")
             continue
 
         # 2.3 Định nghĩa 4 kịch bản với model HIỆN TẠI
@@ -134,25 +134,25 @@ def run_ablation_full():
             preds = pipe.predict(X_test)
             
             # Save CM
-            safe_name = f"{case_name}_{sc_name}".replace(" ", "_")
-            plot_cm(y_str_test, preds, f"CM {sc_name} - {case_name}", f"{SAVE_DIR}/cm_{safe_name}.png")
+            safe_name = f"{Scenario_name}_{sc_name}".replace(" ", "_")
+            plot_cm(y_str_test, preds, f"CM {sc_name} - {Scenario_name}", f"{SAVE_DIR}/cm_{safe_name}.png")
             
             # Store Metrics
             rep = classification_report(y_str_test, preds, output_dict=True, zero_division=0)
-            ablation_history[case_name][sc_name] = rep
+            ablation_history[Scenario_name][sc_name] = rep
             
-        # Vẽ biểu đồ cột so sánh Precision/Recall/F1 cho Case hiện tại
-        plot_scenarios_comparison(ablation_history[case_name], f"{SAVE_DIR}/bar_chart_{case_name}.png")
+        # Vẽ biểu đồ cột so sánh Precision/Recall/F1 cho Scenario hiện tại
+        plot_scenarios_comparison(ablation_history[Scenario_name], f"{SAVE_DIR}/bar_chart_{Scenario_name}.png", Scenario_name)
 
     # ==============================================================================
     # PHẦN 3: VẼ BIỂU ĐỒ TỔNG HỢP
     # ==============================================================================
     print("\n📊 Generating Summary Charts...")
     
-    # 1. Biểu đồ đường (Line Chart) diễn biến F1/Pre/Rec qua các Case
+    # 1. Biểu đồ đường (Line Chart) diễn biến F1/Pre/Rec qua các Scenario
     plot_ablation_evolution(ablation_history, SAVE_DIR)
     
-    # 2. [NEW] Biểu đồ cột (Grouped Bar) so sánh khả năng phát hiện Unknown ở Case 1 & 2
+    # 2. [NEW] Biểu đồ cột (Grouped Bar) so sánh khả năng phát hiện Unknown ở Scenario 1 & 2
     # Hàm này phải có trong src/utils.py (đã cung cấp ở bước trước)
     try:
         plot_unknown_detection_comparison(unknown_detection_results, f"{SAVE_DIR}/unknown_detection_comparison.png")

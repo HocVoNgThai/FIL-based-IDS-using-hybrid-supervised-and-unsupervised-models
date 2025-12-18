@@ -19,24 +19,24 @@ def run_complete_workflow():
     print("🚀 STARTING COMPLETE WORKFLOW")
     tracker = ResourceTracker()
     il_metrics = ILMetrics()
-    global_history = {} # Lưu metrics của tất cả models qua các case
+    global_history = {} # Lưu metrics của tất cả models qua các Scenario
     unknown_stats = {}  # Lưu metrics unknown
     os.makedirs("results/overall", exist_ok=True)
 
     try:
-        # === CASE 0 ===
-        print("\n📚 CASE 0"); tracker.start()
+        # === Scenario 0 ===
+        print("\n📚 Scenario 0"); tracker.start()
         from session0 import session0_initial_training
         models0, loader, pipeline0, acc_s0, metrics_s0 = session0_initial_training()
         res0 = tracker.stop()
         
         il_metrics.record(0, 0, acc_s0)
         il_metrics.calculate_metrics(0)
-        global_history['Case 0'] = metrics_s0
-        plot_detailed_resource_usage(res0['history'], "Case 0", "results/case0/resource_detail.png")
+        global_history['Scenario 0'] = metrics_s0
+        plot_detailed_resource_usage(res0['history'], "Scenario 0", "results/Scenario0/resource_detail.png")
         
-        # === CASE 1 ===
-        print("\n🔍 CASE 1"); tracker.start()
+        # === Scenario 1 ===
+        print("\n🔍 Scenario 1"); tracker.start()
         from session1 import session1_workflow
         pipeline1, results_s1 = session1_workflow()
         res1 = tracker.stop()
@@ -44,12 +44,12 @@ def run_complete_workflow():
         il_metrics.record(1, 0, results_s1['acc_s0'])
         il_metrics.record(1, 1, results_s1['acc_s1'])
         il_metrics.calculate_metrics(1)
-        global_history['Case 1'] = results_s1['metrics']
-        unknown_stats['Case 1'] = results_s1['unknown_stats']
-        plot_detailed_resource_usage(res1['history'], "Case 1", "results/case1/resource_detail.png")
+        global_history['Scenario 1'] = results_s1['metrics']
+        unknown_stats['Scenario 1'] = results_s1['unknown_stats']
+        plot_detailed_resource_usage(res1['history'], "Scenario 1", "results/Scenario1/resource_detail.png")
         
-        # === CASE 2 ===
-        print("\n🎯 CASE 2"); tracker.start()
+        # === Scenario 2 ===
+        print("\n🎯 Scenario 2"); tracker.start()
         from session2 import session2_workflow
         pipeline2, results_s2 = session2_workflow()
         res2 = tracker.stop()
@@ -58,9 +58,9 @@ def run_complete_workflow():
         il_metrics.record(2, 1, results_s2['acc_s1'])
         il_metrics.record(2, 2, results_s2['acc_s2'])
         il_metrics.calculate_metrics(2)
-        global_history['Case 2'] = results_s2['metrics']
-        unknown_stats['Case 2'] = results_s2['unknown_stats']
-        plot_detailed_resource_usage(res2['history'], "Case 2", "results/case2/resource_detail.png")
+        global_history['Scenario 2'] = results_s2['metrics']
+        unknown_stats['Scenario 2'] = results_s2['unknown_stats']
+        plot_detailed_resource_usage(res2['history'], "Scenario 2", "results/Scenario2/resource_detail.png")
         
         # === PLOTTING GLOBAL ===
         print("\n📊 Generating Global Charts...")
@@ -69,7 +69,7 @@ def run_complete_workflow():
         plot_all_models_performance(global_history, "results/overall")
         plot_unknown_detection_performance(unknown_stats, "results/overall")
         
-        rlog = {'Case 0': res0, 'Case 1': res1, 'Case 2': res2}
+        rlog = {'Scenario 0': res0, 'Scenario 1': res1, 'Scenario 2': res2}
         plot_resource_usage(rlog, "results/overall/resources_summary.png")
         
         print(f"\nFinal BWT: {il_metrics.history['BWT'][-1]:.4f}")

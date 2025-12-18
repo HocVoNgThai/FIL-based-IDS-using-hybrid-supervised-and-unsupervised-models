@@ -6,7 +6,7 @@ from src.models import AETrainer, IncrementalOCSVM, OpenSetXGBoost
 from src.pipeline import SequentialHybridPipeline
 from src.utils import *
 
-BASE_DATA_DIR = "merge1.4_3-4-5/case-from-3-incre-4class-incre-6class"
+BASE_DATA_DIR = "merge1.4_3-4-5/Scenario-from-3-incre-4class-incre-6class"
 GLOBAL_SCALER_PATH = "sessions/global_scaler.joblib"
 
 def load_replay_buffer(path):
@@ -16,12 +16,12 @@ def load_replay_buffer(path):
     return X, y
 
 def session1_workflow():
-    print("=== CASE 1: Reconn (3) DETECTION & IL ==="); save_dir = "results/session1"
+    print("=== Scenario 1: Reconn (3) DETECTION & IL ==="); save_dir = "results/session1"
     s1_train = os.path.join(BASE_DATA_DIR, "train_session1.parquet")
     s1_test = os.path.join(BASE_DATA_DIR, "test_session1.parquet")
     s0_train = os.path.join(BASE_DATA_DIR, "train_session0.parquet") 
     s0_test = os.path.join(BASE_DATA_DIR, "test_session0.parquet")
-    mgr = SessionManager(); mgr.advance_to_case_1(s1_train, s1_test)
+    mgr = SessionManager(); mgr.advance_to_Scenario_1(s1_train, s1_test)
     loader = SessionDataLoader(); loader.load_scaler(GLOBAL_SCALER_PATH)
     
     X_train = loader.apply_scaling(loader.load_data_raw(s1_train)[0], fit=False)
@@ -36,13 +36,13 @@ def session1_workflow():
     
     print("\n--- Phase 1: Detection (Pre-IL) ---")
     preds, details = pipeline.predict(X_train, return_details=True)
-    evaluate_final_pipeline(y_train, preds, "Case1_PreIL", save_dir)
-    results['unknown_stats']['Pre'] = calculate_unknown_metrics(y_train, preds, unknown_label=3, save_dir=save_dir, session_name="PreIL")
+    evaluate_final_pipeline(y_train, preds, "Scenario1_PreIL", save_dir)
+    results['unknown_stats']['Pre'] = calculate_unknown_metrics(y_train, preds, unknown_label=3, save_dir=save_dir, session_name="Scenario1_PreIL")
     
     xgb_pre, xgb_conf = pipeline.xgb.predict_with_confidence(X_train)
-    evaluate_supervised_with_unknown(y_train, xgb_pre, xgb_conf, atk_thres=0.7, ben_thres=0.7, session_name="Case1_PreIL", save_dir=save_dir, target_unknown=3)
-    evaluate_gray_zone(y_train, xgb_pre, xgb_conf, details['ae_pred'], details['ocsvm_pred'], 0.7, 0.9, "Case1_PreIL", save_dir)
-    evaluate_unsupervised_detailed(y_train, details['ae_pred'], details['ocsvm_pred'], "Case1_PreIL", save_dir, return_f1=True)
+    evaluate_supervised_with_unknown(y_train, xgb_pre, xgb_conf, atk_thres=0.7, ben_thres=0.7, session_name="Scenario1_PreIL", save_dir=save_dir, target_unknown=3)
+    evaluate_gray_zone(y_train, xgb_pre, xgb_conf, details['ae_pred'], details['ocsvm_pred'], 0.7, 0.9, "Scenario1_PreIL", save_dir)
+    evaluate_unsupervised_detailed(y_train, details['ae_pred'], details['ocsvm_pred'], "Scenario1_PreIL", save_dir, return_f1=True)
     
     print("\n--- Phase 2: IL ---")
     X_old, y_old = load_replay_buffer(s0_train)
@@ -50,12 +50,12 @@ def session1_workflow():
     #pipeline.incremental_learning(X_train, y_train)
     print("\n--- Phase 3: Eval (Post-IL) ---")
     final_preds, details_test = pipeline.predict(X_test, return_details=True)
-    results['metrics']['Pipeline'] = evaluate_final_pipeline(y_test, final_preds, "Case1_PostIL", save_dir)
+    results['metrics']['Pipeline'] = evaluate_final_pipeline(y_test, final_preds, "Scenario1_PostIL", save_dir)
     
     xgb_post, _ = pipeline.xgb.predict_with_confidence(X_test)
-    results['metrics']['XGBoost'] = evaluate_supervised_model(y_test, xgb_post, "Case1_PostIL", save_dir, "XGBoost")
+    results['metrics']['XGBoost'] = evaluate_supervised_model(y_test, xgb_post, "Scenario1_PostIL", save_dir, "XGBoost")
     
-    ae_rep, oc_rep = evaluate_unsupervised_detailed(y_test, details_test['ae_pred'], details_test['ocsvm_pred'], "Case1_PostIL", save_dir)
+    ae_rep, oc_rep = evaluate_unsupervised_detailed(y_test, details_test['ae_pred'], details_test['ocsvm_pred'], "Scenario1_PostIL", save_dir)
     results['metrics']['AE'] = ae_rep
     results['metrics']['OCSVM'] = oc_rep
     

@@ -103,16 +103,16 @@ class ILMetrics:
 
 def plot_resource_usage(log, save_path):
     """Biểu đồ cột tổng hợp (Time, CPU, RAM, GPU) với logic hiển thị text thông minh không chồng chéo"""
-    cases = list(log.keys())
-    times = [log[s]['duration'] for s in cases]
-    cpus = [log[s]['avg_cpu'] for s in cases]
-    rams = [log[s]['max_ram'] for s in cases]
-    gpus = [log[s].get('avg_gpu', 0) for s in cases]
+    Scenarios = list(log.keys())
+    times = [log[s]['duration'] for s in Scenarios]
+    cpus = [log[s]['avg_cpu'] for s in Scenarios]
+    rams = [log[s]['max_ram'] for s in Scenarios]
+    gpus = [log[s].get('avg_gpu', 0) for s in Scenarios]
 
     fig, ax1 = plt.subplots(figsize=(12, 8))
     
     # --- 1. Bar Chart (Time) ---
-    bars = ax1.bar(cases, times, color='#87CEEB', alpha=0.3, label='Time (s)', width=0.5)
+    bars = ax1.bar(Scenarios, times, color='#87CEEB', alpha=0.3, label='Time (s)', width=0.5)
     ax1.set_ylabel('Time (s)', color='blue', fontweight='bold', fontsize=12)
     ax1.tick_params(axis='y', labelcolor='blue')
     
@@ -126,9 +126,9 @@ def plot_resource_usage(log, save_path):
     ax2 = ax1.twinx()
     
     # Vẽ các đường
-    line_cpu = ax2.plot(cases, cpus, 'r-o', label='CPU %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
-    line_ram = ax2.plot(cases, rams, 'g-s', label='RAM %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
-    line_gpu = ax2.plot(cases, gpus, 'm-^', label='GPU %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
+    line_cpu = ax2.plot(Scenarios, cpus, 'r-o', label='CPU %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
+    line_ram = ax2.plot(Scenarios, rams, 'g-s', label='RAM %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
+    line_gpu = ax2.plot(Scenarios, gpus, 'm-^', label='GPU %', linewidth=2.5, markersize=9, markerfacecolor='white', markeredgewidth=2)
     
     ax2.set_ylabel('Usage %', color='black', fontweight='bold', fontsize=12)
     ax2.set_ylim(0, 115) 
@@ -176,19 +176,19 @@ def plot_resource_usage(log, save_path):
     plt.savefig(save_path, dpi=300)
     plt.close()
 
-def plot_detailed_resource_usage(history_dict, case_name, save_path):
+def plot_detailed_resource_usage(history_dict, Scenario_name, save_path):
     """Biểu đồ đường chi tiết theo thời gian"""
     time_axis = history_dict['time']
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
     ax1.plot(time_axis, history_dict['cpu'], label='CPU %', color='red'); ax1.plot(time_axis, history_dict['ram'], label='RAM %', color='green')
-    ax1.set_ylabel('Usage (%)'); ax1.set_title(f'Resource Detail - {case_name}'); ax1.legend()
+    ax1.set_ylabel('Usage (%)'); ax1.set_title(f'Resource Detail - {Scenario_name}'); ax1.legend()
     ax2.plot(time_axis, history_dict['gpu_mem'], label='GPU Mem (MB)', color='purple'); ax2.set_ylabel('MB'); ax2.set_xlabel('Time (s)'); ax2.legend()
     plt.tight_layout(); os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
 
 def plot_il_metrics_trends(il, save_path):
     """Biểu đồ biến động F, BWT, AvgAcc với Text Annotations"""
     steps = range(len(il.history['Avg_Acc']))
-    labels = [f"Case {i}" for i in steps]
+    labels = [f"Scenario {i}" for i in steps]
     
     plt.figure(figsize=(10, 6))
     
@@ -224,21 +224,117 @@ def plot_il_metrics_trends(il, save_path):
 
 def plot_il_matrix(il, save_path):
     """Heatmap Accuracy"""
-    cases = sorted(il.R.keys()); n = len(cases); matrix = np.zeros((n, n))
+    Scenarios = sorted(il.R.keys()); n = len(Scenarios); matrix = np.zeros((n, n))
     for i in range(n):
         for j in range(n): matrix[i, j] = il.R[i].get(j, 0)
     plt.figure(figsize=(8, 6))
-    sns.heatmap(matrix, annot=True, fmt='.4f', cmap='YlGnBu', xticklabels=[f'Test C{s}' for s in cases], yticklabels=[f'Train C{s}' for s in cases])
+    sns.heatmap(matrix, annot=True, fmt='.4f', cmap='YlGnBu', xticklabels=[f'Test C{s}' for s in Scenarios], yticklabels=[f'Train C{s}' for s in Scenarios])
     plt.title('IL Accuracy Matrix'); plt.tight_layout()
     os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
+
+# ==================== PER-CLASS ANALYSIS FUNCTIONS ====================
+
+def analyze_and_plot_class_details(y_true, y_pred, title, save_dir):
+    """
+    Tính toán và vẽ 2 hình:
+    1. Bảng TP, FP, TN, FN cho từng lớp.
+    2. Biểu đồ cột metrics (Accuracy, Precision, Recall, F1) cho từng lớp.
+    """
+    labels = sorted(list(set(y_true) | set(y_pred)))
+    # Sắp xếp để BENIGN lên đầu, UNKNOWN xuống cuối (nếu có)
+    ordered = [l for l in labels if l != "BENIGN" and l != "UNKNOWN"]
+    if "BENIGN" in labels: ordered.insert(0, "BENIGN")
+    if "UNKNOWN" in labels: ordered.append("UNKNOWN")
+    
+    cm = confusion_matrix(y_true, y_pred, labels=ordered)
+    metrics_data = []
+    
+    # 1. Tính toán TP, FP, TN, FN và Metrics cho từng lớp
+    for i, label in enumerate(ordered):
+        TP = cm[i, i]
+        FP = cm[:, i].sum() - TP
+        FN = cm[i, :].sum() - TP
+        TN = cm.sum() - (TP + FP + FN)
+        
+        # Tính Metrics (Tránh chia cho 0)
+        acc = (TP + TN) / (TP + TN + FP + FN) if (TP + TN + FP + FN) > 0 else 0
+        prec = TP / (TP + FP) if (TP + FP) > 0 else 0
+        rec = TP / (TP + FN) if (TP + FN) > 0 else 0
+        f1 = 2 * (prec * rec) / (prec + rec) if (prec + rec) > 0 else 0
+        
+        metrics_data.append([label, TP, FP, TN, FN, acc, prec, rec, f1])
+
+    df = pd.DataFrame(metrics_data, columns=["Label", "TP", "FP", "TN", "FN", "Accuracy", "Precision", "Recall", "F1"])
+    
+    # --- DRAW TABLE (TP, FP, TN, FN) ---
+    fig_tbl, ax_tbl = plt.subplots(figsize=(12, len(ordered) * 0.6 + 1))
+    ax_tbl.axis("off")
+    
+    # Format số liệu cho đẹp
+    table_vals = []
+    for row in df[["Label", "TP", "FP", "TN", "FN"]].values:
+        fmt_row = [row[0]] + [f"{int(x):,}" for x in row[1:]]
+        table_vals.append(fmt_row)
+        
+    table = ax_tbl.table(cellText=table_vals, 
+                         colLabels=["Label", "TP", "FP", "TN", "FN"], 
+                         loc="center", cellLoc="center",
+                         colColours=["#f0f0f0"] * 5)
+    
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1.2, 1.5)
+    ax_tbl.set_title(f"Confusion Details: {title}", fontweight='bold', pad=10)
+    
+    tbl_path = f"{save_dir}/table_confusion_{title.lower().replace(' ', '_')}.png"
+    os.makedirs(os.path.dirname(tbl_path), exist_ok=True)
+    plt.savefig(tbl_path, bbox_inches="tight", dpi=300)
+    plt.close()
+    
+    # --- DRAW BAR CHART (Acc, Pre, Rec, F1 per Class) ---
+    metrics_plot = ["Accuracy", "Precision", "Recall", "F1"]
+    x = np.arange(len(ordered))
+    width = 0.2
+    
+    fig_bar, ax_bar = plt.subplots(figsize=(max(12, len(ordered)*2), 8))
+    colors = ['#9b59b6', '#3498db', '#2ecc71', '#e74c3c'] # Tím, Xanh, Lá, Đỏ
+    
+    for i, metric in enumerate(metrics_plot):
+        vals = df[metric].values
+        # Vị trí cột: -1.5w, -0.5w, 0.5w, 1.5w
+        offset = x + (i - 1.5) * width
+        rects = ax_bar.bar(offset, vals, width, label=metric, color=colors[i])
+        
+        # In giá trị
+        for rect in rects:
+            height = rect.get_height()
+            if height > 0.01: # Chỉ in nếu giá trị đáng kể
+                ax_bar.text(rect.get_x() + rect.get_width()/2., height + 0.01,
+                            f"{height:.2f}", ha='center', va='bottom', 
+                            rotation=90, fontsize=9)
+
+    ax_bar.set_title(f"Per-Class Performance Metrics: {title}", fontweight='bold', fontsize=14)
+    ax_bar.set_xticks(x)
+    ax_bar.set_xticklabels(ordered, rotation=0, fontsize=11, fontweight='bold')
+    ax_bar.set_ylabel("Score")
+    ax_bar.set_ylim(0, 1.15)
+    ax_bar.legend(loc='lower right', ncol=4)
+    ax_bar.grid(axis='y', alpha=0.3)
+    
+    chart_path = f"{save_dir}/chart_per_class_{title.lower().replace(' ', '_')}.png"
+    plt.tight_layout()
+    plt.savefig(chart_path, dpi=300)
+    plt.close()
+    
+    print(f"   -> Saved Table & Chart for {title} in {save_dir}")
 
 def plot_all_models_performance(all_metrics_history, save_dir):
     """
     Vẽ 4 biểu đồ cột (Bar Charts) riêng biệt cho từng Model (Pipeline, XGBoost, AE, OCSVM).
-    Mỗi biểu đồ so sánh 4 chỉ số (Accuracy, Precision, Recall, F1) qua các Case.
+    Mỗi biểu đồ so sánh 4 chỉ số (Accuracy, Precision, Recall, F1) qua các Scenario.
     Hiển thị giá trị cụ thể trên đầu cột.
     """
-    cases = list(all_metrics_history.keys()) # ['Case 0', 'Case 1', 'Case 2']
+    Scenarios = list(all_metrics_history.keys()) # ['Scenario 0', 'Scenario 1', 'Scenario 2']
     models = ['Pipeline', 'XGBoost', 'AE', 'OCSVM']
     
     # Mapping tên hiển thị sang key trong dict
@@ -253,7 +349,7 @@ def plot_all_models_performance(all_metrics_history, save_dir):
     # 1. Chuẩn bị dữ liệu: data[model][metric_name] = [val_c0, val_c1, val_c2]
     data = {mod: {m: [] for m in metric_names} for mod in models}
     
-    for c in cases:
+    for c in Scenarios:
         for mod in models:
             rep = all_metrics_history[c].get(mod, {})
             
@@ -272,7 +368,7 @@ def plot_all_models_performance(all_metrics_history, save_dir):
     fig, axes = plt.subplots(2, 2, figsize=(20, 14)) # Kích thước lớn để chứa text
     axes = axes.flatten()
     
-    x = np.arange(len(cases))
+    x = np.arange(len(Scenarios))
     width = 0.2 # Độ rộng của mỗi cột con
     
     # Màu sắc cho 4 metrics
@@ -301,7 +397,7 @@ def plot_all_models_performance(all_metrics_history, save_dir):
 
         ax.set_title(f'{mod} Performance Evolution', fontweight='bold', fontsize=14)
         ax.set_xticks(x)
-        ax.set_xticklabels(cases, fontsize=11)
+        ax.set_xticklabels(Scenarios, fontsize=11)
         ax.set_ylabel('Score', fontsize=11)
         ax.set_ylim(0, 1.35) # Tăng trần trục Y để chứa text xoay dọc
         ax.grid(axis='y', alpha=0.3)
@@ -319,12 +415,12 @@ def plot_all_models_performance(all_metrics_history, save_dir):
 
 def plot_unknown_detection_performance(unknown_stats, save_dir):
     """Biểu đồ hiệu suất phát hiện Unknown (Pre-IL)"""
-    cases = list(unknown_stats.keys())
-    pre_recalls = [unknown_stats[c]['Pre']['recall'] for c in cases]
-    x = np.arange(len(cases))
+    Scenarios = list(unknown_stats.keys())
+    pre_recalls = [unknown_stats[c]['Pre']['recall'] for c in Scenarios]
+    x = np.arange(len(Scenarios))
     plt.figure(figsize=(8, 6))
     bars = plt.bar(x, pre_recalls, width=0.5, label='Unknown Detection (Recall)', color='#e74c3c')
-    plt.xticks(x, cases); plt.ylim(0, 1.1); plt.title('Unknown Class Detection (Pre-IL)'); plt.legend()
+    plt.xticks(x, Scenarios); plt.ylim(0, 1.1); plt.title('Unknown Class Detection (Pre-IL)'); plt.legend()
     for bar in bars: plt.text(bar.get_x()+bar.get_width()/2, bar.get_height(), f'{bar.get_height():.2%}', ha='center', va='bottom')
     os.makedirs(save_dir, exist_ok=True); plt.savefig(f"{save_dir}/unknown_performance.png"); plt.close()
 
@@ -352,17 +448,17 @@ class SessionDataLoader:
 class SessionManager:
     def __init__(self, base='sessions'):
         self.base = base; self.curr = 0; self.info = {}; os.makedirs(base, exist_ok=True)
-        for i in range(3): os.makedirs(f"{base}/case{i}", exist_ok=True)
-    def initialize_case_0(self, tr, te): self.curr=0; self.info[0]={'tr':tr,'te':te}; self.save()
-    def advance_to_case_1(self, tr, te): self.curr=1; self.info[1]={'tr':tr,'te':te}; self.save()
-    def advance_to_case_2(self, tr, te): self.curr=2; self.info[2]={'tr':tr,'te':te}; self.save()
+        for i in range(3): os.makedirs(f"{base}/Scenario{i}", exist_ok=True)
+    def initialize_Scenario_0(self, tr, te): self.curr=0; self.info[0]={'tr':tr,'te':te}; self.save()
+    def advance_to_Scenario_1(self, tr, te): self.curr=1; self.info[1]={'tr':tr,'te':te}; self.save()
+    def advance_to_Scenario_2(self, tr, te): self.curr=2; self.info[2]={'tr':tr,'te':te}; self.save()
     def save_models(self, models, sid):
-        p = f"{self.base}/case{sid}/models"; os.makedirs(p, exist_ok=True)
+        p = f"{self.base}/Scenario{sid}/models"; os.makedirs(p, exist_ok=True)
         for k, v in models.items():
             if hasattr(v, 'save_model'): v.save_model(f"{p}/{k}")
             else: joblib.dump(v, f"{p}/{k}.joblib")
     def load_models(self, sid, models):
-        p = f"{self.base}/case{sid}/models"
+        p = f"{self.base}/Scenario{sid}/models"
         for k, v in models.items():
             if hasattr(v, 'load_model'): v.load_model(f"{p}/{k}")
             elif os.path.exists(f"{p}/{k}.joblib"): models[k] = joblib.load(f"{p}/{k}.joblib")
@@ -399,7 +495,7 @@ def plot_binary_cm(y_true, y_pred, title, save_path):
     plt.title(f"{title} (%)"); plt.ylabel('True'); plt.xlabel('Pred'); plt.tight_layout()
     os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
 
-def plot_unknown_binary_cm(y_true, preds, unknown_label, save_path):
+def plot_unknown_binary_cm(y_true, preds, unknown_label, save_path, session_name):
     y_true = np.array(y_true); preds = np.array(preds)
     if isinstance(unknown_label, list): is_actual = np.isin(y_true, unknown_label).astype(int); label_text = f"List {unknown_label}"
     else: is_actual = (y_true == unknown_label).astype(int); label_text = get_label_name(unknown_label)
@@ -416,7 +512,7 @@ def plot_unknown_binary_cm(y_true, preds, unknown_label, save_path):
         cm_norm = np.nan_to_num(cm_norm)
     plt.figure(figsize=(6, 5))
     sns.heatmap(cm_norm, annot=True, fmt='.1%', cmap='Oranges', xticklabels=['Others', 'Pred Unknown'], yticklabels=['True Others', 'True Unknown'], vmin=0, vmax=1)
-    plt.title(f"Detection: {label_text}"); plt.tight_layout()
+    plt.title(f"Detection Unknown Confusion Matrix - {session_name}"); plt.tight_layout()
     os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
 
 def plot_metrics_bar(report_dict, title, save_path):
@@ -434,7 +530,7 @@ def calculate_unknown_metrics(y_true, preds, unknown_label, save_dir, session_na
     if isinstance(unknown_label, list): is_actual = np.isin(y_true, unknown_label).astype(int); label_text = f"List {unknown_label}"
     else: is_actual = (y_true == unknown_label).astype(int); label_text = get_label_name(unknown_label)
     y_bin_pred = (preds == "UNKNOWN").astype(int)
-    plot_unknown_binary_cm(y_true, preds, unknown_label, f"{save_dir}/unknown_cm_{session_name}.png")
+    plot_unknown_binary_cm(y_true, preds, unknown_label, f"{save_dir}/unknown_cm_{session_name}.png", session_name)
     return {'precision': precision_score(is_actual, y_bin_pred, zero_division=0), 'recall': recall_score(is_actual, y_bin_pred, zero_division=0), 'f1': f1_score(is_actual, y_bin_pred, zero_division=0)}
 
 def evaluate_supervised_with_unknown(y_true, y_pred, y_conf, atk_thres=0.7, ben_thres=0.7, session_name="", save_dir="", model_name="XGBoost", target_unknown=None):
@@ -468,13 +564,32 @@ def evaluate_supervised_model(y_true, y_pred, session_name, save_dir, model_name
     plot_metrics_bar(rep, f"Metrics {model_name} - {session_name}", f"{save_dir}/metrics_{model_name.lower().replace(' ', '_')}_{session_name}.png")
     return rep
 
-def evaluate_final_pipeline(y_true, y_pred, sess, save_dir, return_f1=False):
+def evaluate_final_pipeline(y_true, y_pred, sess, save_dir, return_f1=False, map_new_to_unknown=None):
     print(f"\n--- [METRICS] Final Pipeline - {sess} ---")
-    y_str = [get_label_name(y) for y in y_true]
-    print(classification_report(y_str, y_pred, digits=4, zero_division=0))
-    plot_cm(y_str, y_pred, f"CM Pipeline - {sess}", f"{save_dir}/cm_pipe_{sess}.png")
-    rep = classification_report(y_str, y_pred, digits=4, zero_division=0, output_dict=True)
+    y_str_true = []
+    for val in y_true:
+        if map_new_to_unknown and val in map_new_to_unknown:
+            y_str_true.append("UNKNOWN")
+        else:
+            y_str_true.append(get_label_name(val))
+            
+    y_str_pred = []
+    for val in y_pred:
+        y_str_pred.append(val if isinstance(val, str) else get_label_name(val))
+
+    print(classification_report(y_str_true, y_str_pred, digits=4, zero_division=0))
+    
+    # 1. Vẽ Confusion Matrix (Cũ)
+    plot_cm(y_str_true, y_str_pred, f"CM Pipeline - {sess}", f"{save_dir}/cm_pipe_{sess}.png")
+    
+    # 2. Vẽ Metrics Bar Tổng hợp (Cũ)
+    rep = classification_report(y_str_true, y_str_pred, digits=4, zero_division=0, output_dict=True)
     plot_metrics_bar(rep, f"Metrics Pipeline - {sess}", f"{save_dir}/metrics_pipe_{sess}.png")
+    
+    # 3. [NEW] Vẽ Bảng TP/FP/TN/FN và Biểu đồ Chi tiết từng Class
+    analyze_and_plot_class_details(y_str_true, y_str_pred, f"Details_{sess}", save_dir)
+    
+    if return_f1: return rep['weighted avg']['f1-score']
     return rep
 
 def evaluate_unsupervised_detailed(y_true, ae_pred, ocsvm_pred, sess, save_dir, return_f1=False):
@@ -497,7 +612,7 @@ def evaluate_gray_zone(y_true, xgb_pred, xgb_conf, ae_pred, ocsvm_pred, c_min, c
     print(">>> OCSVM Gray:"); print(classification_report(y_bin, oc_g, target_names=['Abn', 'Nor'], digits=4, zero_division=0))
     plot_binary_cm(y_bin, oc_g, f"OCSVM Gray - {sess}", f"{save_dir}/cm_ocsvm_gray_{sess}.png")
 
-def plot_scenarios_comparison(results_dict, save_path):
+def plot_scenarios_comparison(results_dict, save_path, Scenario_name):
     """
     results_dict: {'XGB Only': {'f1': 0.8}, 'XGB+AE': {'f1': 0.85}, ...}
     """
@@ -524,7 +639,7 @@ def plot_scenarios_comparison(results_dict, save_path):
     
     plt.xlabel('Ablation Scenarios')
     plt.ylabel('Score')
-    plt.title('Performance Comparison of Different Pipeline Configurations (Case 2)')
+    plt.title(f'Performance Comparison of Different Pipeline Configurations - {Scenario_name}')
     plt.xticks(x, scenarios)
     plt.ylim(0, 1.15)
     plt.legend(loc='lower right')
@@ -553,19 +668,19 @@ def plot_scenarios_comparison(results_dict, save_path):
 def plot_ablation_evolution(ablation_history, save_dir):
     """
     ablation_history: {
-        'Case 0': {'XGB Only': rep, 'Full Pipeline': rep, ...},
-        'Case 1': {...},
-        'Case 2': {...}
+        'Scenario 0': {'XGB Only': rep, 'Full Pipeline': rep, ...},
+        'Scenario 1': {...},
+        'Scenario 2': {...}
     }
     """
-    cases = sorted(list(ablation_history.keys())) # ['Case 0', 'Case 1', 'Case 2']
-    scenarios = list(ablation_history[cases[0]].keys()) # ['XGB Only', 'Full Pipeline'...]
+    Scenarios = sorted(list(ablation_history.keys())) # ['Scenario 0', 'Scenario 1', 'Scenario 2']
+    scenarios = list(ablation_history[Scenarios[0]].keys()) # ['XGB Only', 'Full Pipeline'...]
     metrics = ['Precision', 'Recall', 'F1-Score'] # Bỏ Accuracy nếu muốn, hoặc thêm vào
     
     # Chuẩn bị dữ liệu: data[metric][scenario] = [val_c0, val_c1, val_c2]
     data = {m: {sc: [] for sc in scenarios} for m in metrics}
     
-    for c in cases:
+    for c in Scenarios:
         for sc in scenarios:
             rep = ablation_history[c].get(sc, {})
             data['Precision'][sc].append(rep.get('weighted avg', {}).get('precision', 0))
@@ -574,7 +689,7 @@ def plot_ablation_evolution(ablation_history, save_dir):
 
     # Vẽ biểu đồ
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    x = range(len(cases))
+    x = range(len(Scenarios))
     markers = ['o', 's', '^', 'D']
     colors = ['#e74c3c', '#3498db', '#2ecc71', '#9b59b6'] # Red, Blue, Green, Purple
     
@@ -589,7 +704,7 @@ def plot_ablation_evolution(ablation_history, save_dir):
                 ax.text(x[-1], last_val + 0.01, f'{last_val:.2f}', color=colors[j], fontweight='bold', ha='left')
 
         ax.set_title(f'{metric} Evolution')
-        ax.set_xticks(x); ax.set_xticklabels(cases)
+        ax.set_xticks(x); ax.set_xticklabels(Scenarios)
         ax.set_ylim(0.6, 1.05); ax.grid(True, alpha=0.3)
         if i == 0: ax.legend(loc='lower left') # Chỉ hiện legend ở hình đầu cho gọn
 
@@ -601,21 +716,21 @@ def plot_ablation_evolution(ablation_history, save_dir):
 
 def plot_unknown_detection_comparison(results_data, save_path):
     """
-    Vẽ biểu đồ cột nhóm so sánh Unknown Detection Rate giữa các kịch bản ở Case 1 và Case 2.
+    Vẽ biểu đồ cột nhóm so sánh Unknown Detection Rate giữa các kịch bản ở Scenario 1 và Scenario 2.
     
     results_data format:
     {
-        "XGB Only":      {"Case 1": 0.55, "Case 2": 0.60},
-        "Full Pipeline": {"Case 1": 0.85, "Case 2": 0.90},
+        "XGB Only":      {"Scenario 1": 0.55, "Scenario 2": 0.60},
+        "Full Pipeline": {"Scenario 1": 0.85, "Scenario 2": 0.90},
         ...
     }
     """
     scenarios = list(results_data.keys())
-    cases = ['Case 1', 'Case 2']
+    Scenarios = ['Scenario 1', 'Scenario 2']
     
     # Chuẩn bị dữ liệu vẽ
-    case1_vals = [results_data[sc].get('Case 1', 0) for sc in scenarios]
-    case2_vals = [results_data[sc].get('Case 2', 0) for sc in scenarios]
+    Scenario1_vals = [results_data[sc].get('Scenario 1', 0) for sc in scenarios]
+    Scenario2_vals = [results_data[sc].get('Scenario 2', 0) for sc in scenarios]
     
     x = np.arange(len(scenarios))  # Vị trí các nhóm trên trục X
     width = 0.35  # Độ rộng của mỗi cột
@@ -623,13 +738,13 @@ def plot_unknown_detection_comparison(results_data, save_path):
     fig, ax = plt.subplots(figsize=(12, 7))
     
     # Vẽ 2 nhóm cột
-    rects1 = ax.bar(x - width/2, case1_vals, width, label='Case 1 (Target: Reconn)', color='#3498db')
-    rects2 = ax.bar(x + width/2, case2_vals, width, label='Case 2 (Target: MITM/DNS)', color='#e74c3c')
+    rects1 = ax.bar(x - width/2, Scenario1_vals, width, label='Scenario 1 (Target: Reconn)', color='#3498db')
+    rects2 = ax.bar(x + width/2, Scenario2_vals, width, label='Scenario 2 (Target: MITM/DNS)', color='#e74c3c')
 
     # Thêm nhãn, tiêu đề
     ax.set_ylabel('Detection Rate (Recall of New Attacks as UNKNOWN)', fontweight='bold')
     ax.set_xlabel('Ablation Scenarios', fontweight='bold')
-    ax.set_title('Unknown Threat Detection Comparison (Case 1 vs Case 2)', fontsize=14, fontweight='bold')
+    ax.set_title('Unknown Threat Detection Comparison (Scenario 1 vs Scenario 2)', fontsize=14, fontweight='bold')
     ax.set_xticks(x)
     ax.set_xticklabels(scenarios)
     ax.set_ylim(0, 1.15) # Tăng trần để chứa text
