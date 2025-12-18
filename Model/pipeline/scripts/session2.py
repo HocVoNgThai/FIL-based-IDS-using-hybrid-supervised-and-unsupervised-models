@@ -37,7 +37,8 @@ def session2_workflow():
     
     print("\n--- Phase 1: Detection ---")
     preds, details = pipeline.predict(X_train, return_details=True)
-    evaluate_final_pipeline(y_train, preds, "Scenario2_PreIL", save_dir)
+    map_unknown = [4, 5]
+    evaluate_final_pipeline(y_train, preds, "Scenario2_PreIL", save_dir, map_new_to_unknown=map_unknown)
     results['unknown_stats']['Pre'] = calculate_unknown_metrics(y_train, preds, [4, 5], save_dir, "Scenario1_PreIL")
     
     xgb_pre, conf_pre = pipeline.xgb.predict_with_confidence(X_train)

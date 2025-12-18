@@ -234,99 +234,119 @@ def plot_il_matrix(il, save_path):
 
 # ==================== PER-CLASS ANALYSIS FUNCTIONS ====================
 
-def analyze_and_plot_class_details(y_true, y_pred, title, save_dir):
+def analyze_and_plot_class_details(y_true, y_pred, title, save_dir, merge_labels_list=None, hide_unknown=False):
     """
-    Tính toán và vẽ 2 hình:
-    1. Bảng TP, FP, TN, FN cho từng lớp.
-    2. Biểu đồ cột metrics (Accuracy, Precision, Recall, F1) cho từng lớp.
-    """
-    labels = sorted(list(set(y_true) | set(y_pred)))
-    # Sắp xếp để BENIGN lên đầu, UNKNOWN xuống cuối (nếu có)
-    ordered = [l for l in labels if l != "BENIGN" and l != "UNKNOWN"]
-    if "BENIGN" in labels: ordered.insert(0, "BENIGN")
-    if "UNKNOWN" in labels: ordered.append("UNKNOWN")
+    Tính toán và vẽ Bảng TP/FP/TN/FN + Biểu đồ Metrics.
     
-    cm = confusion_matrix(y_true, y_pred, labels=ordered)
+    Logic xử lý nhãn (Quan trọng):
+    1. Nếu có merge_labels_list (Pre-IL): 
+       - Các nhãn trong list này sẽ bị đổi tên thành 'UNKNOWN' trong cả y_true và y_pred.
+       - Kết quả: Bảng sẽ tính tổng hợp cho 'UNKNOWN' và KHÔNG hiện các nhãn cũ (như Reconn, MITM).
+    
+    2. Nếu hide_unknown=True (Post-IL):
+       - Nhãn 'UNKNOWN' sẽ bị loại bỏ khỏi danh sách hiển thị.
+    """
+    # --- 1. Thực hiện Gộp nhãn (Mapping) ---
+    y_true_mapped = list(y_true)
+    y_pred_mapped = list(y_pred)
+    
+    if merge_labels_list:
+        # Chuyển đổi tất cả nhãn trong merge_list thành "UNKNOWN"
+        y_true_mapped = ["UNKNOWN" if lbl in merge_labels_list else lbl for lbl in y_true_mapped]
+        y_pred_mapped = ["UNKNOWN" if lbl in merge_labels_list else lbl for lbl in y_pred_mapped]
+
+    # --- 2. Lấy danh sách nhãn duy nhất sau khi gộp ---
+    all_labels = sorted(list(set(y_true_mapped) | set(y_pred_mapped)))
+    
+    # --- 3. Lọc nhãn hiển thị ---
+    labels_to_show = set(all_labels)
+    
+    if hide_unknown and "UNKNOWN" in labels_to_show:
+        labels_to_show.remove("UNKNOWN")
+        
+    # Sắp xếp: BENIGN đầu, UNKNOWN cuối, còn lại Alpha
+    ordered = [l for l in all_labels if l in labels_to_show and l != "BENIGN" and l != "UNKNOWN"]
+    if "BENIGN" in labels_to_show: ordered.insert(0, "BENIGN")
+    if "UNKNOWN" in labels_to_show: ordered.append("UNKNOWN")
+    
+    if not ordered: return
+
+    # --- 4. Tính toán Metrics ---
+    cm = confusion_matrix(y_true_mapped, y_pred_mapped, labels=all_labels)
     metrics_data = []
     
-    # 1. Tính toán TP, FP, TN, FN và Metrics cho từng lớp
-    for i, label in enumerate(ordered):
-        TP = cm[i, i]
-        FP = cm[:, i].sum() - TP
-        FN = cm[i, :].sum() - TP
+    label_to_idx = {l: i for i, l in enumerate(all_labels)}
+
+    for label in ordered:
+        idx = label_to_idx[label]
+        TP = cm[idx, idx]
+        FP = cm[:, idx].sum() - TP
+        FN = cm[idx, :].sum() - TP
         TN = cm.sum() - (TP + FP + FN)
         
-        # Tính Metrics (Tránh chia cho 0)
-        acc = (TP + TN) / (TP + TN + FP + FN) if (TP + TN + FP + FN) > 0 else 0
-        prec = TP / (TP + FP) if (TP + FP) > 0 else 0
-        rec = TP / (TP + FN) if (TP + FN) > 0 else 0
-        f1 = 2 * (prec * rec) / (prec + rec) if (prec + rec) > 0 else 0
+        # Tránh chia cho 0
+        denom_acc = TP + TN + FP + FN
+        acc = (TP + TN) / denom_acc if denom_acc > 0 else 0
+        
+        denom_prec = TP + FP
+        prec = TP / denom_prec if denom_prec > 0 else 0
+        
+        denom_rec = TP + FN
+        rec = TP / denom_rec if denom_rec > 0 else 0
+        
+        denom_f1 = prec + rec
+        f1 = 2 * (prec * rec) / denom_f1 if denom_f1 > 0 else 0
         
         metrics_data.append([label, TP, FP, TN, FN, acc, prec, rec, f1])
 
     df = pd.DataFrame(metrics_data, columns=["Label", "TP", "FP", "TN", "FN", "Accuracy", "Precision", "Recall", "F1"])
     
-    # --- DRAW TABLE (TP, FP, TN, FN) ---
-    fig_tbl, ax_tbl = plt.subplots(figsize=(12, len(ordered) * 0.6 + 1))
+    # --- 5. Vẽ Bảng (Table) ---
+    fig_tbl, ax_tbl = plt.subplots(figsize=(14, len(ordered) * 0.6 + 2))
     ax_tbl.axis("off")
-    
-    # Format số liệu cho đẹp
     table_vals = []
     for row in df[["Label", "TP", "FP", "TN", "FN"]].values:
+        # Format số nguyên có dấu phẩy ngăn cách
         fmt_row = [row[0]] + [f"{int(x):,}" for x in row[1:]]
         table_vals.append(fmt_row)
-        
-    table = ax_tbl.table(cellText=table_vals, 
-                         colLabels=["Label", "TP", "FP", "TN", "FN"], 
-                         loc="center", cellLoc="center",
-                         colColours=["#f0f0f0"] * 5)
     
-    table.auto_set_font_size(False)
-    table.set_fontsize(11)
-    table.scale(1.2, 1.5)
+    table = ax_tbl.table(cellText=table_vals, colLabels=["Label", "TP", "FP", "TN", "FN"], 
+                         loc="center", cellLoc="center", colColours=["#f0f0f0"] * 5)
+    table.auto_set_font_size(False); table.set_fontsize(11); table.scale(1.2, 1.5)
     ax_tbl.set_title(f"Confusion Details: {title}", fontweight='bold', pad=10)
     
-    tbl_path = f"{save_dir}/table_confusion_{title.lower().replace(' ', '_')}.png"
-    os.makedirs(os.path.dirname(tbl_path), exist_ok=True)
-    plt.savefig(tbl_path, bbox_inches="tight", dpi=300)
+    os.makedirs(os.path.dirname(f"{save_dir}/table_"), exist_ok=True)
+    plt.savefig(f"{save_dir}/table_confusion_{title.lower().replace(' ', '_')}.png", bbox_inches="tight", dpi=300)
     plt.close()
     
-    # --- DRAW BAR CHART (Acc, Pre, Rec, F1 per Class) ---
+    # --- 6. Vẽ Biểu đồ Cột (Metrics Chart) ---
     metrics_plot = ["Accuracy", "Precision", "Recall", "F1"]
-    x = np.arange(len(ordered))
-    width = 0.2
+    x = np.arange(len(ordered)); width = 0.2
     
     fig_bar, ax_bar = plt.subplots(figsize=(max(12, len(ordered)*2), 8))
-    colors = ['#9b59b6', '#3498db', '#2ecc71', '#e74c3c'] # Tím, Xanh, Lá, Đỏ
+    colors = ['#9b59b6', '#3498db', '#2ecc71', '#e74c3c']
     
     for i, metric in enumerate(metrics_plot):
         vals = df[metric].values
-        # Vị trí cột: -1.5w, -0.5w, 0.5w, 1.5w
-        offset = x + (i - 1.5) * width
-        rects = ax_bar.bar(offset, vals, width, label=metric, color=colors[i])
+        # Vị trí các cột con
+        rects = ax_bar.bar(x + (i - 1.5) * width, vals, width, label=metric, color=colors[i])
         
-        # In giá trị
+        # In giá trị lên đầu cột
         for rect in rects:
-            height = rect.get_height()
-            if height > 0.01: # Chỉ in nếu giá trị đáng kể
-                ax_bar.text(rect.get_x() + rect.get_width()/2., height + 0.01,
-                            f"{height:.2f}", ha='center', va='bottom', 
-                            rotation=90, fontsize=9)
+            if rect.get_height() > 0.01:
+                ax_bar.text(rect.get_x() + rect.get_width()/2., rect.get_height() + 0.01, 
+                            f"{rect.get_height():.2f}", ha='center', va='bottom', 
+                            fontsize=9)
 
     ax_bar.set_title(f"Per-Class Performance Metrics: {title}", fontweight='bold', fontsize=14)
-    ax_bar.set_xticks(x)
-    ax_bar.set_xticklabels(ordered, rotation=0, fontsize=11, fontweight='bold')
-    ax_bar.set_ylabel("Score")
-    ax_bar.set_ylim(0, 1.15)
-    ax_bar.legend(loc='lower right', ncol=4)
-    ax_bar.grid(axis='y', alpha=0.3)
+    ax_bar.set_xticks(x); ax_bar.set_xticklabels(ordered, rotation=0, fontsize=11, fontweight='bold')
+    ax_bar.set_ylabel("Score"); ax_bar.set_ylim(0, 1.25)
+    ax_bar.legend(loc='lower right', ncol=4); ax_bar.grid(axis='y', alpha=0.3)
     
-    chart_path = f"{save_dir}/chart_per_class_{title.lower().replace(' ', '_')}.png"
     plt.tight_layout()
-    plt.savefig(chart_path, dpi=300)
+    plt.savefig(f"{save_dir}/chart_per_class_{title.lower().replace(' ', '_')}.png", dpi=300)
     plt.close()
-    
-    print(f"   -> Saved Table & Chart for {title} in {save_dir}")
+    print(f"   -> Saved details for {title}")
 
 def plot_all_models_performance(all_metrics_history, save_dir):
     """
@@ -512,7 +532,7 @@ def plot_unknown_binary_cm(y_true, preds, unknown_label, save_path, session_name
         cm_norm = np.nan_to_num(cm_norm)
     plt.figure(figsize=(6, 5))
     sns.heatmap(cm_norm, annot=True, fmt='.1%', cmap='Oranges', xticklabels=['Others', 'Pred Unknown'], yticklabels=['True Others', 'True Unknown'], vmin=0, vmax=1)
-    plt.title(f"Detection Unknown Confusion Matrix - {session_name}"); plt.tight_layout()
+    plt.title(f"Unknown Detection Confusion Matrix - {session_name}"); plt.tight_layout()
     os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
 
 def plot_metrics_bar(report_dict, title, save_path):
@@ -566,28 +586,42 @@ def evaluate_supervised_model(y_true, y_pred, session_name, save_dir, model_name
 
 def evaluate_final_pipeline(y_true, y_pred, sess, save_dir, return_f1=False, map_new_to_unknown=None):
     print(f"\n--- [METRICS] Final Pipeline - {sess} ---")
-    y_str_true = []
-    for val in y_true:
-        if map_new_to_unknown and val in map_new_to_unknown:
-            y_str_true.append("UNKNOWN")
-        else:
-            y_str_true.append(get_label_name(val))
-            
-    y_str_pred = []
-    for val in y_pred:
-        y_str_pred.append(val if isinstance(val, str) else get_label_name(val))
+    
+    # Chuyển đổi y_true, y_pred sang String Label cơ bản (Chưa gộp)
+    # Gộp sẽ được thực hiện bên trong hàm analyze_and_plot_class_details
+    y_str_true = [get_label_name(val) for val in y_true]
+    y_str_pred = [val if isinstance(val, str) else get_label_name(val) for val in y_pred]
 
+    # In report tổng quan
     print(classification_report(y_str_true, y_str_pred, digits=4, zero_division=0))
     
-    # 1. Vẽ Confusion Matrix (Cũ)
+    # Vẽ Confusion Matrix (Cũ) - Nếu muốn gộp cả ở đây thì cần thêm logic, nhưng ta tập trung vào hàm chi tiết bên dưới
     plot_cm(y_str_true, y_str_pred, f"CM Pipeline - {sess}", f"{save_dir}/cm_pipe_{sess}.png")
     
-    # 2. Vẽ Metrics Bar Tổng hợp (Cũ)
     rep = classification_report(y_str_true, y_str_pred, digits=4, zero_division=0, output_dict=True)
     plot_metrics_bar(rep, f"Metrics Pipeline - {sess}", f"{save_dir}/metrics_pipe_{sess}.png")
     
-    # 3. [NEW] Vẽ Bảng TP/FP/TN/FN và Biểu đồ Chi tiết từng Class
-    analyze_and_plot_class_details(y_str_true, y_str_pred, f"Details_{sess}", save_dir)
+    # --- LOGIC CHUẨN BỊ THAM SỐ CHO HÀM VẼ CHI TIẾT ---
+    
+    # 1. Xác định danh sách tên nhãn cần gộp (Merge List)
+    # Nếu map_new_to_unknown = [3] -> merge_list = ['Reconn']
+    merge_labels_list = []
+    if map_new_to_unknown:
+        merge_labels_list = [get_label_name(v) for v in map_new_to_unknown]
+    
+    # 2. Xác định cờ ẩn Unknown (Hide Unknown)
+    # - Pre-IL (có merge_list): KHÔNG ẩn Unknown (False) -> Để hiện cột Unknown (đã gộp các nhãn mới)
+    # - Post-IL (không merge_list): ẨN Unknown (True) -> Để tập trung vào các nhãn cụ thể
+    hide_unk = (map_new_to_unknown is None)
+    
+    # Gọi hàm vẽ chi tiết (Đã cập nhật logic bên trên)
+    analyze_and_plot_class_details(
+        y_str_true, y_str_pred, 
+        title=f"Details_{sess}", 
+        save_dir=save_dir, 
+        merge_labels_list=merge_labels_list, # Truyền danh sách nhãn cần gộp
+        hide_unknown=hide_unk              # Truyền cờ ẩn/hiện Unknown
+    )
     
     if return_f1: return rep['weighted avg']['f1-score']
     return rep
