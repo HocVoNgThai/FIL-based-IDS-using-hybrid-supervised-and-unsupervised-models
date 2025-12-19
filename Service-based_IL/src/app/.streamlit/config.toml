@@ -1,0 +1,9 @@
+[client]
+showErrorDetails = "full"
+showSidebarNavigation = false
+
+[theme]
+backgroundColor = "white"
+
+[server]
+runOnSave = true

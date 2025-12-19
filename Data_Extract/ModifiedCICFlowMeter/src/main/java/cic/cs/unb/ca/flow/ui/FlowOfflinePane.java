@@ -371,7 +371,7 @@ public class FlowOfflinePane extends JPanel{
                                 updateOut(str);
                             }
                         });
-                        logger.info("Flow Offline Pane File - Progress -> {} \t Chunks[0]: {}", evt.getNewValue(), chunks.getFirst().toString());
+                        logger.info("Flow Offline Pane File - Progress -> {} \t Chunks[0]: {}", evt.getNewValue(), chunks.getFirst().toString()); // chunks.get(0)
                     }
                     
                 } else if ("state".equals(evt.getPropertyName())) {

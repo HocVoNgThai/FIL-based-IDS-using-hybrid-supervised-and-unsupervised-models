@@ -11,6 +11,7 @@ import cic.cs.unb.ca.jnetpcap.worker.LoadPcapInterfaceWorker;
 import cic.cs.unb.ca.jnetpcap.worker.TrafficFlowWorker;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.jnetpcap.Pcap;
 import org.jnetpcap.PcapIf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -262,6 +263,46 @@ public class FlowMonitorPane extends JPanel {
         return pane;
     }
 
+    private void loadPcapIfs_Sync() {
+        // Tái tạo logic từ LoadPcapInterfaceWorker.doInBackground()
+        
+        java.util.List<PcapIf> ifs = new ArrayList<>();
+        StringBuilder errbuf = new StringBuilder();
+
+        // ** CẢNH BÁO: CHẠY TRÊN LUỒNG CHÍNH (EDT) CÓ THỂ GÂY ĐÓNG BĂNG UI **
+        try {
+            if(Pcap.findAllDevs(ifs, errbuf) != Pcap.OK) {
+                // Xử lý lỗi nếu không thể tìm thấy thiết bị
+                logger.error("Error occurred while finding devices: " + errbuf.toString());
+                throw new Exception(errbuf.toString());
+            }
+
+            // Tái tạo logic xử lý kết quả:
+            
+            // 1. Chuyển đổi PcapIf sang PcapIfWrapper
+            List<PcapIfWrapper> pcapiflist = PcapIfWrapper.fromPcapIf(ifs);
+
+            // 2. Cập nhật Model và UI
+            listModel.removeAllElements();
+            for(PcapIfWrapper pcapif : pcapiflist) {
+                listModel.addElement(pcapif);
+            }
+            
+            // 3. Kích hoạt và cập nhật trạng thái
+            btnStart.setEnabled(true);
+            btnGroup.clearSelection();
+
+            lblStatus.setText("pick one network interface to listening");
+            lblStatus.validate();
+            
+        } catch (Exception e) {
+            // Xử lý InterruptedException hoặc ExecutionException (đã thay bằng Exception chung)
+            logger.debug(e.getMessage());
+            lblStatus.setText("Error loading interfaces: " + e.getMessage());
+            btnStart.setEnabled(false); // Vô hiệu hóa nút nếu có lỗi
+        }
+    }
+
     private void loadPcapIfs() {
         LoadPcapInterfaceWorker task = new LoadPcapInterfaceWorker();
         task.addPropertyChangeListener(event -> {
@@ -294,6 +335,8 @@ public class FlowMonitorPane extends JPanel {
         });
         task.execute();
     }
+
+
 
     private void startTrafficFlow() {
 

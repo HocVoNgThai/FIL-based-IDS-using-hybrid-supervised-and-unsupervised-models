@@ -16,6 +16,9 @@ public class BasicPacketInfo {
     private    long   timeStamp;
     private    long   payloadBytes;
     private    String  flowId = null;  
+	// new
+	private	   String fwdFID = null;
+	private    String bwdFID = null;
 /* ******************************************** */    
     private    boolean flagFIN = false;
 	private    boolean flagPSH = false;
@@ -61,25 +64,31 @@ public class BasicPacketInfo {
     		}
     	}     	
     	
+		int index = (int) this.id % 10000;
+		this.fwdFID = this.getSourceIP() + "-" + this.getDestinationIP() + "-" + this.srcPort  + "-" + this.dstPort  + "-" + this.protocol+ "-" +index;
+		this.bwdFID = this.getDestinationIP() + "-" + this.getSourceIP() + "-" + this.dstPort  + "-" + this.srcPort  + "-" + this.protocol+ "-" +index;
+
         if(forward){
-            this.flowId = this.getSourceIP() + "-" + this.getDestinationIP() + "-" + this.srcPort  + "-" + this.dstPort  + "-" + this.protocol;
+			// this.flowId = this.getSourceIP() + "-" + this.getDestinationIP() + "-" + this.srcPort  + "-" + this.dstPort  + "-" + this.protocol;
+            this.flowId = this.fwdFID;
+
         }else{
-            this.flowId = this.getDestinationIP() + "-" + this.getSourceIP() + "-" + this.dstPort  + "-" + this.srcPort  + "-" + this.protocol;
-        }
+			// this.flowId = this.getDestinationIP() + "-" + this.getSourceIP() + "-" + this.dstPort  + "-" + this.srcPort  + "-" + this.protocol;
+			this.flowId = this.bwdFID;
+        
+		}
         return this.flowId;
 	}
 
  	public String fwdFlowId() {  
-		this.flowId = this.getSourceIP() + "-" + this.getDestinationIP() + "-" + this.srcPort  + "-" + this.dstPort  + "-" + this.protocol;
-		return this.flowId;
+		// this.flowId = this.getSourceIP() + "-" + this.getDestinationIP() + "-" + this.srcPort  + "-" + this.dstPort  + "-" + this.protocol;
+		return this.fwdFID;
 	}
 	
-	public String bwdFlowId() {  
-		this.flowId = this.getDestinationIP() + "-" + this.getSourceIP() + "-" + this.dstPort  + "-" + this.srcPort  + "-" + this.protocol;
-		return this.flowId;
+	public String bwdFlowId() {
+		// this.flowId = this.getDestinationIP() + "-" + this.getSourceIP() + "-" + this.dstPort  + "-" + this.srcPort  + "-" + this.protocol;
+		return this.bwdFID; // this.flowId;
 	}
-
-
     
 	public String dumpInfo() {
 		return null;

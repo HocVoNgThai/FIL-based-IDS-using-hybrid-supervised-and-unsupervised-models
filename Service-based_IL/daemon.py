@@ -2,7 +2,7 @@ import sys
 import time
 import queue
 import threading
-from run_daily import run_incremental_job   # tách logic ra function
+from run_loop import run_incremental_job   # tách logic ra function
 
 # ===== Support Libs =====
 import gc
@@ -19,26 +19,37 @@ else:
 job_queue = queue.Queue()
 # JOB_INTERVAL = 24 * 3600   # 1 ngày
 JOB_INTERVAL = 60
+JOB_INDEX = 0 
 
 def scheduler_thread():
     while True:
-        print("\n[SCHEDULER] Adding daily incremental job into queue...")
-        job_queue.put("incremental_job")
+        job_name = f"ID-{JOB_INDEX}"
+        
+        print(f"\n[SCHEDULER] Adding incremental job into queue: {job_name}")
+        
+        job_queue.put(job_name)
+        
+        JOB_INDEX +=1
         time.sleep(JOB_INTERVAL)
 
 def worker_thread():
     while True:
         job = job_queue.get()  # block until job exists
         print("[WORKER] Starting job: ", job)
+        
+        job_index = job.split("-")
+        job_index=  int(job_index[1])
         try:
-            run_incremental_job()
-            gc.collect()
+            run_incremental_job(job_index)
             
         except Exception as e:
             print("[WORKER] ERROR:", e)
             
-        print("[WORKER] Job finished.")
+        print(f"[WORKER] Job finished: {job}")
+        
+        del job_index
         gc.collect()
+        
         job_queue.task_done()
 
 if __name__ == "__main__":

@@ -1,12 +1,12 @@
 Benign: 0
 DDoS: 1
 DNS_Spoofing: 2
-DoS: 3 - 2
+DoS: 3
 MITM_ArpSpoofing: 4
 Merlin: 5
 Mirai: 6
-Reconnaisance: 7 - 3
-Vulnerability_Scan: 8 - 4
+Reconnaisance: 7
+Vulnerability_Scan: 8
 
 IL
 Benign: 0
@@ -23,7 +23,6 @@ DoS: 2 -- old: 2
 Reconnaisance: 3 --old :7
 MITM_ArpSpoofing: 4 -- old: 4
 
-
 IL DNS_Spoofing
 Benign: 0
 DDoS: 1 - old: 1
@@ -37,3 +36,12 @@ DDoS: 1 - old: 1
 DoS: 2 -- old: 2
 Reconnaisance: 3 --old :7
 Merlin: 4 -- old:5
+
+===============
+IL 345
+Benign: 0
+DDoS: 1 - old: 1
+DoS: 2 -- old: 3
+Reconnaisance: 3 --old :7
+MITM_ArpSpoofing: 4
+DNS_Spoofing: 5 --old: 2

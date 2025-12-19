@@ -1,0 +1,47 @@
+/* ===== Sidebar ===== */
+[data-testid="stSidebar"] {
+    background-color: #1e1e1e;
+    padding: 0;
+    transition: width 0.3s ease;
+    overflow: hidden;
+}
+
+/* Sidebar collapsed */
+.sidebar-collapsed {
+    width: 80px !important;
+}
+
+.sidebar-collapsed .sidebar-text {
+    display: none !important;
+}
+
+/* Sidebar expanded */
+.sidebar-expanded {
+    width: 260px !important;
+}
+
+.sidebar-item {
+    padding: 10px 15px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    color: white;
+}
+
+.sidebar-item:hover {
+    background: #333;
+}
+
+.sidebar-icon {
+    font-size: 20px;
+    margin-right: 10px;
+}
+
+/* Sidebar collapsed */
+.sidebar-collapsed .css-1lcbmhc {
+    width: 4rem !important;
+}
+.sidebar-collapsed .css-1lcbmhc .css-1wvkp1i {  /* text labels */
+    display: none !important;
+}
+
