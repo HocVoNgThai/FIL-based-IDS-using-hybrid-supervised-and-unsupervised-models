@@ -236,42 +236,31 @@ def plot_il_matrix(il, save_path):
 
 def analyze_and_plot_class_details(y_true, y_pred, title, save_dir, merge_labels_list=None, hide_unknown=False):
     """
-    Tính toán và vẽ Bảng TP/FP/TN/FN + Biểu đồ Metrics.
-    
-    Logic xử lý nhãn (Quan trọng):
-    1. Nếu có merge_labels_list (Pre-IL): 
-       - Các nhãn trong list này sẽ bị đổi tên thành 'UNKNOWN' trong cả y_true và y_pred.
-       - Kết quả: Bảng sẽ tính tổng hợp cho 'UNKNOWN' và KHÔNG hiện các nhãn cũ (như Reconn, MITM).
-    
-    2. Nếu hide_unknown=True (Post-IL):
-       - Nhãn 'UNKNOWN' sẽ bị loại bỏ khỏi danh sách hiển thị.
+    Tính toán và vẽ Bảng TP/FP/TN/FN (có kèm %) + Biểu đồ Metrics.
     """
-    # --- 1. Thực hiện Gộp nhãn (Mapping) ---
+    # 1. Gộp nhãn
     y_true_mapped = list(y_true)
     y_pred_mapped = list(y_pred)
     
     if merge_labels_list:
-        # Chuyển đổi tất cả nhãn trong merge_list thành "UNKNOWN"
         y_true_mapped = ["UNKNOWN" if lbl in merge_labels_list else lbl for lbl in y_true_mapped]
         y_pred_mapped = ["UNKNOWN" if lbl in merge_labels_list else lbl for lbl in y_pred_mapped]
 
-    # --- 2. Lấy danh sách nhãn duy nhất sau khi gộp ---
+    # 2. Danh sách nhãn
     all_labels = sorted(list(set(y_true_mapped) | set(y_pred_mapped)))
     
-    # --- 3. Lọc nhãn hiển thị ---
+    # 3. Lọc hiển thị
     labels_to_show = set(all_labels)
-    
     if hide_unknown and "UNKNOWN" in labels_to_show:
         labels_to_show.remove("UNKNOWN")
         
-    # Sắp xếp: BENIGN đầu, UNKNOWN cuối, còn lại Alpha
     ordered = [l for l in all_labels if l in labels_to_show and l != "BENIGN" and l != "UNKNOWN"]
     if "BENIGN" in labels_to_show: ordered.insert(0, "BENIGN")
     if "UNKNOWN" in labels_to_show: ordered.append("UNKNOWN")
     
     if not ordered: return
 
-    # --- 4. Tính toán Metrics ---
+    # 4. Tính toán Metrics
     cm = confusion_matrix(y_true_mapped, y_pred_mapped, labels=all_labels)
     metrics_data = []
     
@@ -284,16 +273,11 @@ def analyze_and_plot_class_details(y_true, y_pred, title, save_dir, merge_labels
         FN = cm[idx, :].sum() - TP
         TN = cm.sum() - (TP + FP + FN)
         
-        # Tránh chia cho 0
+        # Metrics
         denom_acc = TP + TN + FP + FN
         acc = (TP + TN) / denom_acc if denom_acc > 0 else 0
-        
-        denom_prec = TP + FP
-        prec = TP / denom_prec if denom_prec > 0 else 0
-        
-        denom_rec = TP + FN
-        rec = TP / denom_rec if denom_rec > 0 else 0
-        
+        prec = TP / (TP + FP) if (TP + FP) > 0 else 0
+        rec = TP / (TP + FN) if (TP + FN) > 0 else 0
         denom_f1 = prec + rec
         f1 = 2 * (prec * rec) / denom_f1 if denom_f1 > 0 else 0
         
@@ -301,25 +285,40 @@ def analyze_and_plot_class_details(y_true, y_pred, title, save_dir, merge_labels
 
     df = pd.DataFrame(metrics_data, columns=["Label", "TP", "FP", "TN", "FN", "Accuracy", "Precision", "Recall", "F1"])
     
-    # --- 5. Vẽ Bảng (Table) ---
-    fig_tbl, ax_tbl = plt.subplots(figsize=(14, len(ordered) * 0.6 + 2))
+    # --- 5. DRAW TABLE (WITH PERCENTAGES) ---
+    # Tăng chiều rộng hình để chứa text dài hơn
+    fig_tbl, ax_tbl = plt.subplots(figsize=(16, len(ordered) * 0.6 + 2)) 
     ax_tbl.axis("off")
+    
     table_vals = []
     for row in df[["Label", "TP", "FP", "TN", "FN"]].values:
-        # Format số nguyên có dấu phẩy ngăn cách
-        fmt_row = [row[0]] + [f"{int(x):,}" for x in row[1:]]
+        label = row[0]
+        # Lấy giá trị số
+        values = row[1:] 
+        # Tổng số mẫu trong dataset (TP+FP+TN+FN cho 1 lớp luôn bằng tổng mẫu)
+        total_samples = sum(values) 
+        
+        fmt_row = [label]
+        for val in values:
+            pct = (val / total_samples) * 100 if total_samples > 0 else 0
+            # Format: "123,456 (12.5%)"
+            fmt_row.append(f"{int(val):,} ({pct:.1f}%)")
+            
         table_vals.append(fmt_row)
     
     table = ax_tbl.table(cellText=table_vals, colLabels=["Label", "TP", "FP", "TN", "FN"], 
                          loc="center", cellLoc="center", colColours=["#f0f0f0"] * 5)
-    table.auto_set_font_size(False); table.set_fontsize(11); table.scale(1.2, 1.5)
+    
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1.2, 1.6) # Scale cao hơn chút cho thoáng
     ax_tbl.set_title(f"Confusion Details: {title}", fontweight='bold', pad=10)
     
     os.makedirs(os.path.dirname(f"{save_dir}/table_"), exist_ok=True)
     plt.savefig(f"{save_dir}/table_confusion_{title.lower().replace(' ', '_')}.png", bbox_inches="tight", dpi=300)
     plt.close()
     
-    # --- 6. Vẽ Biểu đồ Cột (Metrics Chart) ---
+    # --- 6. DRAW BAR CHART ---
     metrics_plot = ["Accuracy", "Precision", "Recall", "F1"]
     x = np.arange(len(ordered)); width = 0.2
     
@@ -328,10 +327,7 @@ def analyze_and_plot_class_details(y_true, y_pred, title, save_dir, merge_labels
     
     for i, metric in enumerate(metrics_plot):
         vals = df[metric].values
-        # Vị trí các cột con
         rects = ax_bar.bar(x + (i - 1.5) * width, vals, width, label=metric, color=colors[i])
-        
-        # In giá trị lên đầu cột
         for rect in rects:
             if rect.get_height() > 0.01:
                 ax_bar.text(rect.get_x() + rect.get_width()/2., rect.get_height() + 0.01, 
