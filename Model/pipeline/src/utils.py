@@ -9,7 +9,7 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report, confusion_matrix, f1_score, precision_score, recall_score, accuracy_score
+from sklearn.metrics import classification_report, confusion_matrix, f1_score, precision_score, recall_score, accuracy_score, precision_recall_fscore_support
 import warnings
 
 try: import GPUtil
@@ -331,8 +331,8 @@ def analyze_and_plot_class_details(y_true, y_pred, title, save_dir, merge_labels
         for rect in rects:
             if rect.get_height() > 0.01:
                 ax_bar.text(rect.get_x() + rect.get_width()/2., rect.get_height() + 0.01, 
-                            f"{rect.get_height():.2f}", ha='center', va='bottom', 
-                            fontsize=9)
+                            f"{rect.get_height():.4f}", ha='center', va='bottom', 
+                            fontsize=8, fontweight='bold')
 
     ax_bar.set_title(f"Per-Class Performance Metrics: {title}", fontweight='bold', fontsize=14)
     ax_bar.set_xticks(x); ax_bar.set_xticklabels(ordered, rotation=0, fontsize=11, fontweight='bold')
@@ -799,3 +799,95 @@ def plot_unknown_detection_comparison(results_data, save_path):
     plt.savefig(save_path)
     plt.close()
     print(f"Unknown detection comparison chart saved to {save_path}")
+
+def calculate_weighted_metrics(y_true, y_pred, map_new_to_unknown=None):
+    """
+    Tính toán Accuracy, Precision, Recall, F1 (Weighted) với logic gộp nhãn.
+    Giúp tính điểm Pre-IL chính xác: Coi (True: Reconn -> UNKNOWN) == (Pred: UNKNOWN) là ĐÚNG.
+    """
+    # 1. Map Ground Truth
+    y_str_true = []
+    for val in y_true:
+        # Nếu nhãn nằm trong danh sách cần gộp (vd: [3] cho Reconn) -> Đổi thành "UNKNOWN"
+        if map_new_to_unknown and int(val) in map_new_to_unknown:
+            y_str_true.append("UNKNOWN")
+        else:
+            y_str_true.append(get_label_name(val))
+            
+    # 2. Map Prediction (Pipeline đã trả về string, nhưng cần đảm bảo)
+    y_str_pred = []
+    # Lấy tên các nhãn target để xử lý
+    target_names = [get_label_name(v) for v in (map_new_to_unknown or [])]
+    
+    for val in y_pred:
+        label_name = val if isinstance(val, str) else get_label_name(val)
+        # Trong trường hợp hãn hữu pipeline đoán ra nhãn mới ở phase cũ
+        if map_new_to_unknown and label_name in target_names:
+             y_str_pred.append("UNKNOWN")
+        else:
+             y_str_pred.append(label_name)
+
+    # 3. Tính toán Metrics
+    acc = accuracy_score(y_str_true, y_str_pred)
+    prec, rec, f1, _ = precision_recall_fscore_support(y_str_true, y_str_pred, average='weighted', zero_division=0)
+    
+    return {
+        'Accuracy': acc,
+        'Precision': prec,
+        'Recall': rec,
+        'F1-Score': f1
+    }
+
+def plot_pipeline_evolution_comparison(evolution_data, save_path):
+    """
+    Vẽ biểu đồ cột so sánh tiến trình (Scenario 0 -> 1 Pre -> 1 Post...).
+    Input: dictionary dạng:
+    {
+        'Scenario 0': {'Accuracy': 0.99, ...},
+        'Scenario 1 (Pre-IL)': {'Accuracy': 0.98, ...},
+        ...
+    }
+    """
+    phases = list(evolution_data.keys())
+    metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
+    
+    # Chuẩn bị dữ liệu vẽ
+    data = {m: [] for m in metrics}
+    for phase in phases:
+        for m in metrics:
+            data[m].append(evolution_data[phase].get(m, 0))
+            
+    x = np.arange(len(phases))
+    width = 0.2
+    
+    fig, ax = plt.subplots(figsize=(16, 9))
+    
+    # Màu sắc: Xanh dương, Cam, Xanh lá, Đỏ
+    colors = ['#3498db', '#e67e22', '#2ecc71', '#e74c3c']
+    
+    for i, metric in enumerate(metrics):
+        values = data[metric]
+        offset = x + (i - 1.5) * width
+        rects = ax.bar(offset, values, width, label=metric, color=colors[i])
+        
+        # In giá trị lên đầu cột
+        for rect in rects:
+            height = rect.get_height()
+            if height > 0:
+                ax.text(rect.get_x() + rect.get_width()/2., height + 0.01,
+                        f'{height:.4f}',
+                        ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+    ax.set_ylabel('Score', fontweight='bold', fontsize=12)
+    ax.set_title('Pipeline Performance Evolution (Pre-IL vs Post-IL)', fontweight='bold', fontsize=16)
+    ax.set_xticks(x)
+    ax.set_xticklabels(phases, fontsize=11, fontweight='bold')
+    ax.set_ylim(0, 1.35) # Tăng trần để chứa text xoay
+    ax.legend(loc='lower left', ncol=4, fontsize=11)
+    ax.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+    print(f"Evolution chart saved to {save_path}")
