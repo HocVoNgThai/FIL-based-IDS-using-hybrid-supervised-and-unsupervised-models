@@ -52,7 +52,7 @@ class Load_Data:
         if self.check_dir(dir_in):
             return Path(dir_in)
         
-        dir_in = Path.cwd().parent / dir_in
+        dir_in = Path.cwd() / dir_in
         if not Path.exists(dir_in):
             print("[Load_Alerts] - Log Dir not found !")
             return None

@@ -59,6 +59,7 @@ public class RT_cmd {
         csvWriterThread = Executors.newSingleThreadExecutor();
 
         startRealtimeFlow();
+        registerShutdownHook();
         startKeyListener();
 
         // block main thread
@@ -151,6 +152,20 @@ public class RT_cmd {
     }
 
     /* ======================= CLI ======================= */
+
+    private static void registerShutdownHook() {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("[INFO] Shutdown signal received");
+
+            try {
+                stopRealtimeFlow();
+                shutdown();
+                System.out.println("[INFO] Hooked! RT_cmd exit cleanly");
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }));
+    }
 
     private static void startKeyListener() {
 

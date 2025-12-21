@@ -10,31 +10,24 @@ from pathlib import Path
 # Local import
 from src.config.settings import settings, Settings
 
-
 # Đường dẫn file .config (hoặc .env) để lưu thủ công khi thay đổi
-CONFIG_FILE = Path("src/config/.config")  # Tên file bạn đang dùng
+CONFIG_FILE = Path("src/config/.config")
 
 def main():
-    st.set_page_config(page_title="System Settings", layout="wide")
     st.title("⚙️ System Configuration")
-
-    # ========================
-    # Lấy thông tin fields từ Pydantic model
-    # ========================
     model_fields = Settings.model_fields
 
     col_left, col_right = st.columns([1.8, 1.2])
     with col_left:
         st.subheader("🔧 Chỉnh sửa cấu hình")
-        
         st.caption(f"📂 Thư mục cha hiện tại: {Path.cwd()}")
         with st.form("settings_form"):
             new_values = {}
 
-            for field_name, field_info in Settings.model_fields.items():  # ← Lấy từ class
+            for field_name, field_info in model_fields.items():  # ← Lấy từ class
                 current_value = getattr(settings, field_name)
 
-                if field_name in ["DATA_DIR", "ALERTS_DIR", "PKL_DIR", "MODEL_DIR"]:
+                if field_name in ["DATA_DIR", "ALERTS_DIR", "PKL_DIR", "MODEL_DIR", "NET_INTF"]:
                     # Đường dẫn → text_input với resolve()
                     new_val = st.text_input(
                         field_name,
@@ -72,19 +65,17 @@ def main():
             st.warning("File `.config` chưa tồn tại. Nó sẽ được tạo khi bạn lưu lần đầu.")
 
         st.subheader("ℹ️ Giá trị hiện tại trong runtime")
-        current_runtime = {
-            "DATA_DIR": str(settings.DATA_DIR),  # .resolve()
-            "ALERTS_DIR": str(settings.ALERTS_DIR),
-            "PKL_DIR": str(settings.PKL_DIR),
-            "MODEL_DIR": str(settings.MODEL_DIR),
-            "REFRESH_INTERVAL": settings.REFRESH_INTERVAL,
-            "AUTO_REFRESH": settings.AUTO_REFRESH,
-            "DEBUG": settings.DEBUG,
-            "APP_NAME": settings.APP_NAME,
-            "MAIN_CLASS": settings.MAIN_CLASS,
-            "MEM_OPTS_MAX": settings.MEM_OPTS_MAX,
-            "MEM_OPTS_MIN": settings.MEM_OPTS_MIN,
-        }
+        current_runtime = {}
+        for field_name, field_info in Settings.model_fields.items():  # ← Lấy từ class
+            current_value = getattr(settings, field_name)
+
+            if field_name in ["DATA_DIR", "ALERTS_DIR", "PKL_DIR", "MODEL_DIR", "NET_INTF"]:
+                # Đường dẫn → text_input với resolve()
+                current_runtime[field_name] = str(current_value)
+            else:
+                current_runtime[field_name] = current_value
+                
+        
         st.json(current_runtime, expanded=True)
         
         st.markdown("---")

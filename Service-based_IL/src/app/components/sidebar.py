@@ -11,9 +11,9 @@ import streamlit as st
 def render_sidebar(sidebar):
     menu_data = {
         "Alerts": "bell-fill",
-        "IL Config": "gear", #"journal-text"
         "Data": "database",
-        "Settings": "gear",
+        "IL Config": "gear", #"journal-text"
+        "Settings": "gear"
         # Thêm các trang khác ở đây
     }
 

@@ -1,107 +1,130 @@
 #!/bin/bash
 set -e
 
-# ===== [1/6] ======
+# ===== CONFIG =====
+PROJECT_DIR="/opt/incremental_ids"
+SYSTEMD_DIR="/etc/systemd/system"
+SERVICE_SRC_DIR="$PROJECT_DIR/systemd_service_file"
+JAVA_BIN=$(readlink -f $(which java))
 
-echo -e "\033[0;32m[1/5]\033[0m Installing required apt packages..."
+SERVICES=(
+  "ids_cicextract.service"
+  "ids_flowzmqserver.service"
+  "ids_dashboard.service"
+)
+IL_SERVICES=(
+  "ids_il.timer"
+  "ids_il.service"
+)
 
-sudo apt update
+# ===== CHECK ROOT =====
+echo "Cấp quyền đọc ghi cho User hiện tại: $SUDO_USER" 
+
+if [[ "$EUID" -ne 0 ]]; then
+  echo "\033[0;32m[!]\033[0m Please run as root"
+  exit 1
+fi
+
+# ===== CHECK REQUIRE PACKAGE - PYTHONVENV =====
+echo -e "\033[0;32m[i]\033[0m Installing required apt packages..."
 
 packages=("python3" "python3-pip" "python3-venv" "jq")
-
 for package in "${packages[@]}"; do
     
     if ! dpkg-query -l "$package" | grep -E "^ii"; then
-    # if ! dpkg -l "$package";  then # | grep -E '^ii';
-    # Cài đặt các gói nếu chúng chưa tồn tại
-    # dpkg -l dùng để liệt kê tất cả các gói đã cài đặt.
-    # grep -E '^ii' lọc ra các dòng bắt đầu bằng "ii" (đã cài đặt).
-    # dpkg-query -W -f='${Status}\n' "$package" sẽ trả về trạng thái của gói cụ thể.
-    # grep -q "ii" sẽ kiểm tra xem kết quả có chứa ii (đã cài đặt) hay không.
-
     # sudo apt update
     sudo apt install -y "$package"
-    # echo -e "hello ${package}"
     fi
 done
 
-# ===== 2/6 ======
+# ===== Tạo thư mục chạy =====
 echo -e "==========================================="
 echo -e "\033[0;32m[2/5]\033[0m Creating project structure..."
 
+# không nên xóa rồi tạo lại vì có logs
 if [ ! -d "/opt/incremental_ids" ]; then
-    # Nếu thư mục không tồn tại, tạo thư mục
     sudo mkdir -p /opt/incremental_ids
-    # sudo mkdir -p /opt/incremental_ids/{data,models,logs}
+    sudo chown -R $SUDO_USER:$SUDO_USER /opt/incremental_ids
 fi
 
-if [ ! -d "/opt/incremental_ids/logs" ]; then
-    # Nếu thư mục không tồn tại, tạo thư mục
-    sudo mkdir -p /opt/incremental_ids/logs
-    # sudo mkdir -p /opt/incremental_ids/{data,models,logs}
+if [ ! -d "/opt/incremental_ids/app_logs" ]; then
+    sudo mkdir -p /opt/incremental_ids/app_logs
 fi
 
-sudo cp *.py /opt/incremental_ids/
-# sudo cp pipeline.py /opt/incremental_ids/
-# sudo cp run_daily.py /opt/incremental_ids/
-# sudo cp extract_flows.sh /opt/incremental_ids/
-# sudo chmod +x /opt/incremental_ids/extract_flows.sh
+if [ ! -d "/opt/incremental_ids/flows_parquet" ]; then
+    sudo mkdir -p /opt/incremental_ids/flows_parquet
+fi
 
-# ====== [3/6] Create venv ... =====
+sudo chown -R $SUDO_USER:$SUDO_USER /opt/incremental_ids/flows_parquet /opt/incremental_ids/app_logs
+# sudo chmod 600 /opt/incremental_ids/flows_parquet /opt/incremental_ids/app_logs #755
+
+# ===================
+# cp src qua
+# ===================
+sudo cp -r ./systemd_service_file /opt/incremental_ids/
+sudo cp ./requirements.txt /opt/incremental_ids/
+sudo cp -r ./src /opt/incremental_ids/
+
+# ===================
+# Tạo venv
+# ===================
 echo -e "==========================================="
-echo -e "\033[0;32m[3/5]\033[0m Creating venv ..."
+echo -e "\033[0;32m[i]\033[0m Creating venv ..."
 
 python3 -m venv /opt/incremental_ids/venv
 source /opt/incremental_ids/venv/bin/activate
 pip install -r requirements.txt
 
+# enable java running without root
+if [[ "$JAVA_BIN" == */jre/bin/java ]]; then
+    JRE_JAVA_DIR=$(dirname "$JAVA_BIN")
+    sudo setcap cap_net_raw,cap_net_admin+eip "$JRE_JAVA_DIR"/* 2>/dev/null || true
+fi
 
-# ==============[4/5] CREATE SYSTEMD SERVICE================
-echo -e "==========================================="
-echo -e "\033[0;32m[4/5]\033[0m Creating systemd service..."
+echo "[i] Kiểm tra capability"
+getcap "$JAVA_BIN"
+echo "[i] Đã gán capability cho: $JAVA_BIN"
 
-sudo tee /etc/systemd/system/incremental_ids.service >/dev/null <<EOF
+# ====== =================
+# INSTALL SERVICES
+# =====================
+echo "\033[0;32m[+]\033[0m Installing IDS services..."
 
-[Unit]
-Description=Incremental IDS Daemon
-After=network-online.target
+# ===== CHECK PROJECT DIR =====
+if [[ ! -d "$PROJECT_DIR" ]]; then
+  echo "[!] Project directory not found: $PROJECT_DIR"
+  exit 1
+fi
 
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/incremental_ids
+# ===== COPY SERVICE FILES =====
+for svc in "${SERVICES[@]}"; do
+  echo "  → Installing $svc"
+  cp "$SERVICE_SRC_DIR/$svc" "$SYSTEMD_DIR/$svc"
+done
 
-ExecStart=/opt/incremental_ids/venv/bin/python -u /opt/incremental_ids/daemon.py
+for svc in "${IL_SERVICES[@]}"; do
+  echo "  → Installing $svc"
+  cp "$SERVICE_SRC_DIR/$svc" "$SYSTEMD_DIR/$svc"
+done
 
-StandardOutput=append:/opt/incremental_ids/logs/run.log
-StandardError=append:/opt/incremental_ids/logs/error.log
-Restart=always
+# ===== SYSTEMD RELOAD =====
+systemctl daemon-reexec
+systemctl daemon-reload
 
-[Install]
-WantedBy=multi-user.target
+# ===== ENABLE & START =====
+for svc in "${SERVICES[@]}"; do
+  systemctl enable "$svc"
+  systemctl restart "$svc"
+done
 
-EOF
+systemctl enable ids_il.timer
+systemctl start ids_il.timer
 
-# [Unit]
-# Description=Daily Incremental IDS Pipeline
-# After=network-online.target
-
-# [Service]
-# Type=oneshot - simple
-# User=root
-# ExecStart=/bin/bash /opt/incremental_ids/extract_flows.sh
-# ExecStart=/usr/bin/python3 /opt/incremental_ids/run_daily.py
-# StandardOutput=append:/opt/incremental_ids/logs/run.log
-# StandardError=append:/opt/incremental_ids/logs/error.log
-
-# ===== START SERVICE =====
-echo -e "==========================================="
-echo -e "\033[0;32m[5/5]\033[0m Reloading & Starting systemd service..."
-sudo systemctl daemon-reload
-sudo systemctl enable incremental_ids.service
-sudo systemctl start incremental_ids.service
-
-
-# ===== NOTIFICATIONS =====
-echo -e "\033[0;32m[DONE]\033[0m Installation complete."
-echo -e "Check logs using: journalctl -u incremental_ids.service -f"
+# ===== DONE ==========
+echo ""
+echo "\033[0;32m[✓]\033[0m IDS services installed & running"
+echo ""
+echo "Check status:"
+for svc in "${SERVICES[@]}"; do
+  echo "  systemctl status ${svc%.service}"
+done

@@ -21,17 +21,17 @@ from src.app.config.config import COLS_TO_DROP, MINMAX_COLS, STANDARD_COLS, DECI
 st.set_page_config(layout="wide")
 
 # ===== CONST =====
-HOME = Path.cwd()
+# HOME = Path.cwd()
 LABEL_OPTIONS = ["Benign", "Unknown", "DDoS", "DoS", "Reconnaisance", "MITM_ArpSpoofing", "DNS_Spoofing", "NeedManualLabel"]
 
 def main():
     st.title("🧠 Data Management & Labeling")
     # ===== SESSION STATE =====
     if "current_file" not in st.session_state:
-        st.session_state.current_file = Path(HOME / settings.DATA_DIR / f"{datetime.now().date()}" / "batch_0.parquet")
+        st.session_state.current_file = Path(settings.DATA_DIR / f"{datetime.now().date()}" / "batch_0.parquet")
 
     if "jsonl_file" not in st.session_state:
-        st.session_state.jsonl_file = Path(HOME /settings.ALERTS_DIR / f"{datetime.now().date()}.jsonl")
+        st.session_state.jsonl_file = Path(settings.ALERTS_DIR / f"{datetime.now().date()}.jsonl")
         
     if "dataLabeling" not in st.session_state:
         st.session_state.dataLabeling = Data_Labeling(st.session_state.current_file)

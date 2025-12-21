@@ -45,7 +45,7 @@ def bucket_port(port):
     
 def astype(df): 
     dtypes = {}    
-    with open('features.json') as json_file:
+    with open('src/app/features.json') as json_file:
         data = json.load(json_file)
         for key, type in data.items():
             if type == "int8":
@@ -66,7 +66,7 @@ def astype(df):
     return df
 
 def round_decimal(df, min_max_cols, standard_cols, minmax_decimal_bin, standard_decimal_bin):
-    with open('./features.json') as json_file:
+    with open('src/app/features.json') as json_file:
         data = json.load(json_file)
         for key, type in data.items():
             if key in min_max_cols:

@@ -1,0 +1,18 @@
+[Unit]
+Description=IDS Flow ZMQ Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/incremental_ids
+ExecStart=/opt/incremental_ids/venv/bin/python -m src.FlowZmqServer
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

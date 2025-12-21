@@ -4,6 +4,7 @@ import subprocess
 import shutil
 from pathlib import Path
 from typing import List
+import signal
 
 # MINE _ SETTINGS
 from src.config.settings import settings
@@ -74,7 +75,9 @@ def find_java_executable() -> str:
 JAVACMD = find_java_executable()
 print(f"[{APP_NAME}] JAVACMD đã được xác định: {JAVACMD}")
 
-APP_ARGS: List[str] = sys.argv[1:]
+# APP_ARGS: List[str] = sys.argv[1:]
+# if len(APP_ARGS) <0:
+APP_ARGS = ["-i", settings.NET_INTF, "fto", f"{settings.FTO}"]
 
 JAVA_OPTS = os.environ.get('JAVA_OPTS', '').split()     #"--enable-native-access=ALL-UNNAMED", os.environ.get('JAVA_OPTS', '').split()
 CIC_FLOW_METER_OPTS = os.environ.get('CIC_FLOW_METER_OPTS', '').split()
@@ -99,17 +102,24 @@ cmd = [arg for arg in cmd if arg]
 
 # --- 5. Thực thi lệnh Java ---
 try:
+    
+    
     print(f"\n[{APP_NAME}] Đang thực thi lệnh:")
     # In 1p nếu nhiều lib
     # print(" ".join(FINAL_COMMAND[:3]) + " ... " + " ".join(FINAL_COMMAND[-3:]))
     
     result = subprocess.run(
         cmd,
-        check=True,
+        # check=True,
         text=True,
     )
     
     print(f"\n[{APP_NAME}] Ứng dụng Java đã kết thúc thành công. Mã thoát: {result.returncode}")
+    sys.exit(result.returncode)
+    
+except KeyboardInterrupt:
+    print(f"\n[{APP_NAME}] KeyboardInterrupt (Ctrl+C)")
+    sys.exit(130)   # chuẩn POSIX cho SIGINT
 
 except subprocess.CalledProcessError as e:
     print(f"\n[{APP_NAME}] LỖI: Lệnh Java thất bại với mã thoát {e.returncode}.")
@@ -118,5 +128,3 @@ except subprocess.CalledProcessError as e:
 except FileNotFoundError as e:
     print(f"\n[{APP_NAME}] LỖI Hệ thống: Không thể tìm thấy hoặc thực thi file: {e}")
     sys.exit(1)
-
-sys.exit(0)

@@ -11,7 +11,7 @@ from src.config.settings import settings
 from core.Load_Alerts import Load_Data, COLS_TO_DROP
 
 # CONST
-HOME = Path.cwd()
+# HOME = Path.cwd()
 
 
 # ======================
@@ -21,12 +21,15 @@ HOME = Path.cwd()
 def main():
     st.title("🚨 Realtime IDS Alerts Log")
 
+    if 'auto_refresh' not in st.session_state:
+        st.session_state.auto_refresh = getattr(settings, "AUTO_REFRESH")
+        
     if 'data_loader' not in st.session_state:
         st.session_state.data_loader = Load_Data(
-            dir_in=Path(HOME/settings.ALERTS_DIR),
+            dir_in=Path(settings.ALERTS_DIR),
             last_update_time=0,
             refresh_interval=60,
-            auto_refresh=True,
+            auto_refresh=st.session_state.auto_refresh,
             file=None
         )
 
@@ -34,8 +37,7 @@ def main():
     
     # === Tùy chọn refresh trên giao diện ===
     col1, col2, col3 = st.columns(3)
-    if 'auto_refresh' not in st.session_state:
-        st.session_state.auto_refresh = False
+     # load từ settings    
     with col1:
         auto_refresh = st.checkbox("Auto Refresh", value=st.session_state.auto_refresh)
         st.session_state.auto_refresh = auto_refresh
@@ -60,11 +62,12 @@ def main():
         st.stop()
 
     # Metric
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns([1,1,1,1,2])
     col1.metric("Giới hạn page - Alerts: ", len(df))
-    col2.metric("Attack", len(df[df["Label"] != "BENIGN"]))
-    col3.metric("Unknown", len(df[df.get('Label', []) =="UNKNOWN"]))
-    col4.metric("Mới nhất", df.iloc[0][COLS_TO_DROP[1]])
+    col2.metric("Benign", len(df[df["Label"] == "Benign"]))
+    col3.metric("Attack", len(df[df["Label"] != "Benign"]))
+    col4.metric("Unknown", len(df[df.get('Label', []) =="Unknown"]))
+    col5.metric("Mới nhất", df.iloc[0][COLS_TO_DROP[1]])
 
     st.markdown("---")
 
@@ -80,5 +83,5 @@ def main():
 
     # Auto rerun nếu bật
     if auto_refresh:
-        time.sleep(1)
+        time.sleep(5)
         st.rerun()

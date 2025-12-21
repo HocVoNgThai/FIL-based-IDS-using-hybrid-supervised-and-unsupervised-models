@@ -5,10 +5,44 @@ import json
 # 3rd libs
 from pathlib import Path
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
 
+
 class IncrementalSettings(BaseSettings):
+    MIN_INTERVAL_SEC: int = Field (
+        default = 6 * 3600,
+        ge = 10* 60,
+        description= "Thời gian mỗi lần thực hiện IL"
+        )
+    IL_DATA_DIR : Path = Path("./train_data")
+    IL_MODEL_DIR: Path = Path("./src/models/pre_models")
+    IL_LOGS: Path = Path("./il_logs/")
+    IL_STATE_FILE: Path = Path("./src/job/il_state.json")
+    IL_LOCK_FILE: Path = Path("./src/job/il.lock")
+    IL_LABEL_FILE: Path = Path("./src/config/Label.json")
+    IL_FIXED_MEM_BUDGET: int = 1200000
+    
+    def IL_LABEL(self) -> dict:
+        if not self.IL_LABEL_FILE.exists():
+            default_label = {"Benign": 400000, "DDoS": 400000, "DoS": 400000}
+            self.IL_LABEL_FILE.parent.mkdir(parents=True, exist_ok=True)
+            self.IL_LABEL_FILE.write_text(json.dumps(default_label, indent=2))
+            return default_label
+        
+        try:
+            return json.loads(self.IL_LABEL_FILE.read_text())
+        except json.JSONDecodeError:
+            # Nếu file lỗi → dùng default và ghi đè
+            default = {"Benign": 400000, "DDoS": 400000, "DoS": 400000}
+            self.IL_LABEL_FILE.write_text(json.dumps(default, indent=2))
+            return default
+
+    def IL_LABEL_SAVE(self, new_label: dict):
+        self.IL_LABEL_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self.IL_LABEL_FILE.write_text(json.dumps(new_label, indent=2, ensure_ascii=False))
+        print(f"[IL Settings] Đã cập nhật IL_LABEL: {new_label}")
+    
     # Dataset
     initial_train_ratio: float = Field(
         default=0.5,
@@ -56,10 +90,12 @@ class IncrementalSettings(BaseSettings):
         description="Bật/tắt training incremental"
     )
 
-    class Config:
-        env_file = "incremental_learning.json"
-        env_prefix = "IL_"  # Nếu muốn dùng .env: INC_INITIAL_TRAIN_RATIO=0.4
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_file="src/config/.config_incremental",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore" # Có thể thêm để tránh lỗi khi dư thừa biến trong .env
+    )
 
 # Singleton instance
 incremental_settings = IncrementalSettings()

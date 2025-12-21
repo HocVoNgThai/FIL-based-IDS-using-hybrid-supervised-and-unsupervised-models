@@ -1,0 +1,89 @@
+#!/bin/bash
+set -e
+
+# ===== CONFIG =====
+PROJECT_DIR="/opt/incremental-ids"
+SYSTEMD_DIR="/etc/systemd/system"
+SERVICE_SRC_DIR="$PROJECT_DIR/systemd_service_file"
+
+SERVICES=(
+  "ids-cicextract.service"
+  "ids-flow-server.service"
+  "ids-dashboard.service"
+)
+
+# ===== CHECK ROOT =====
+if [[ "$EUID" -ne 0 ]]; then
+  echo "\033[0;32m[!]\033[0m Please run as root"
+  exit 1
+fi
+
+# ===== CHECK REQUIRE PACKAGE - PYTHONVENV =====
+echo -e "\033[0;32m[i]\033[0m Installing required apt packages..."
+
+packages=("python3" "python3-pip" "python3-venv" "jq")
+for package in "${packages[@]}"; do
+    
+    if ! dpkg-query -l "$package" | grep -E "^ii"; then
+    # sudo apt update
+    sudo apt install -y "$package"
+    fi
+done
+
+# ===== Tạo thư mục chạy =====
+echo -e "==========================================="
+echo -e "\033[0;32m[2/5]\033[0m Creating project structure..."
+
+# không nên xóa rồi tạo lại vì có logs
+if [ ! -d "/opt/incremental_ids" ]; then
+    sudo mkdir -p /opt/incremental_ids
+fi
+
+# ===================
+# cp src qua
+# ===================
+sudo cp ./systemd_service_file /opt/incremental_ids/
+sudo cp ./requirements.txt /opt/incremental_ids/
+sudo cp ./src /opt/incremental_ids/
+
+# ===================
+# Tạo venv
+# ===================
+echo -e "==========================================="
+echo -e "\033[0;32m[i]\033[0m Creating venv ..."
+
+python3 -m venv /opt/incremental_ids/venv
+source /opt/incremental_ids/venv/bin/activate
+pip install -r requirements.txt
+
+echo "\033[0;32m[+]\033[0m Installing IDS services..."
+
+# ===== CHECK PROJECT DIR =====
+if [[ ! -d "$PROJECT_DIR" ]]; then
+  echo "[!] Project directory not found: $PROJECT_DIR"
+  exit 1
+fi
+
+# ===== COPY SERVICE FILES =====
+for svc in "${SERVICES[@]}"; do
+  echo "  → Installing $svc"
+  cp "$SERVICE_SRC_DIR/$svc" "$SYSTEMD_DIR/$svc"
+done
+
+# ===== SYSTEMD RELOAD =====
+systemctl daemon-reexec
+systemctl daemon-reload
+
+# ===== ENABLE & START =====
+for svc in "${SERVICES[@]}"; do
+  systemctl enable "$svc"
+  systemctl restart "$svc"
+done
+
+echo ""
+echo "\033[0;32m[✓]\033[0m IDS services installed & running"
+echo ""
+echo "Check status:"
+for svc in "${SERVICES[@]}"; do
+  echo "  systemctl status ${svc%.service}"
+done

@@ -1,4 +1,5 @@
 # STANDARD LIBS
+from datetime import datetime
 from pathlib import Path
 
 # 3RD LIBS
@@ -7,8 +8,10 @@ import joblib
 # MINE
 from src.config.settings import settings
 from src.Components.Models import *
+
 class Manager:
-    def __init__(self, dir_in):
+                
+    def __init__(self, dir_in, dir_out =None, current_update_time = None):
         self.dir_in = None
         if self.check_dir(dir_in):
             self.dir_in = dir_in
@@ -17,7 +20,16 @@ class Manager:
             if self.dir_in is None:
                 print("[ERROR] Manager.py - Dir không tồn tại!")
                 exit(0)
-    
+        
+        if dir_out is None or current_update_time is None:
+            return
+        self.dir_out = dir_out
+        self.dir_out.mkdir(parents=True, exist_ok = True)
+        self.current_update_time= datetime.strftime(current_update_time, "%Y-%m-%d %H:%M:%S")
+        self.current_update_time = self.current_update_time.replace(":", "-")
+        
+        self.dir_out = Path(self.dir_out/f"{self.current_update_time}")
+        
     def check_dir(self, dir_in):
         dir_in = Path(dir_in)
         if dir_in.exists():
@@ -41,8 +53,14 @@ class Manager:
         # xgb.load_model(dir_in/xgb.model_name)
         # ocsvm.load_model(dir_in/ocsvm.model_name)
         # ae.load_model(dir_in/ae.model_name)
-        for model in models:
-            model.load_model(dir_in/model.model_name)
+        
+        # làm kiểu này giá trị model mới thay đổi được, tham chiếu
+        for index in range(len(models)):
+            models[index].load_model(dir_in/models[index].model_name)
         print("[MANAGER] Models Loaded Successfully")
-            
+    
+    def save_models(self, models: list):
+        for index in range(len(models)):
+            models[index].save_model(self.dir_out/models[index].model_name)
+        print("[MANAGER] Models Saved Successfully")
         

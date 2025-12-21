@@ -1,14 +1,21 @@
+# Standard libs
+import os
+
+# 3rd libs
+import joblib
 import torch
+import xgboost as xgb
+import numpy as np
+import pandas as pd
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
-import joblib
-import os
+
 from sklearn.linear_model import SGDOneClassSVM
 from sklearn.kernel_approximation import Nystroem
 from sklearn.model_selection import train_test_split
-import xgboost as xgb
+
 from collections import Counter
+
 
 # ==================== 1. DEEP AUTOENCODER (Requested Version) ====================
 class Model:
@@ -50,7 +57,7 @@ class AETrainer(Model):
     def train_on_known_data(self, X_benign, epochs=200, batch_size=512, verbose=True):
         if verbose: print(f"Training Deep AE on {len(X_benign)} samples...")
         self.model.train()
-        tensor = torch.FloatTensor(X_benign).to(self.device)
+        tensor = torch.FloatTensor(X_benign.values).to(self.device)
         loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(tensor), batch_size=batch_size, shuffle=True, drop_last=True)
         
         for epoch in range(epochs):
@@ -69,7 +76,10 @@ class AETrainer(Model):
     def get_reconstruction_errors(self, data):
         self.model.eval()
         with torch.no_grad():
-            tensor = torch.FloatTensor(data).to(self.device)
+            if isinstance(data, np.ndarray):
+                tensor = torch.FloatTensor(data).to(self.device)
+            elif isinstance(data, pd.Dataframe):
+                tensor = torch.FloatTensor(data.values).to(self.device)  # .values → numpy array
             errors = []
             for i in range(0, len(tensor), 2048):
                 batch = tensor[i:i+2048]

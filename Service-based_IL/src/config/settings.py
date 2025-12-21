@@ -11,9 +11,13 @@ class Settings(BaseSettings):
     PKL_DIR: Path = Path("./src/pkl")
     MODEL_DIR: Path = Path("./src/models")
     
+    #ARGS CICEXTRACT
+    NET_INTF: str = "eth0"
+    FTO: int = "1000"
+    ATO: int = "120000000"
     
     REFRESH_INTERVAL: int = 60
-    AUTO_REFRESH: bool = True
+    AUTO_REFRESH: bool = False
     DEBUG: bool = False
 
     # JAVA
@@ -21,6 +25,7 @@ class Settings(BaseSettings):
     MAIN_CLASS: str= "cic.cs.unb.ca.ifm.RT_cmd"
     MEM_OPTS_MAX: str = "-Xmx10g" # Max 10 GB
     MEM_OPTS_MIN: str = "-Xms512m" # Min512m
+    
     
     class Config:
         env_file = "src/config/.config"          # Tự động đọc file .config

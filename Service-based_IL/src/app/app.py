@@ -1,7 +1,15 @@
 # app.py
+#standard
+import os
+import sys
+
+# 3 rd
 import streamlit as st
-from src.app.components.sidebar import render_sidebar
 import importlib
+
+# Local Import 
+from src.app.components.sidebar import render_sidebar
+from src.app.pages import *
 
 # Cấu hình trang
 st.set_page_config(page_title="IDS Dashboard", layout="wide")
@@ -29,22 +37,35 @@ def toggle_sidebar():
     st.rerun()
     
 sidebar, mainview = st.columns([1, 12], vertical_alignment="top") if st.session_state.sidebar_expanded == True else st.columns([1, 15], vertical_alignment="top") 
-
 selected_page = render_sidebar(sidebar)
 
 # ===== MAIN VIEW =====
 page_mapping = {
-        "Alerts": "pages.Alerts",
-        "Data" : "pages.Data",
-        "IL Config" : "pages.IncrementalLearning",
-        "Settings" : "pages.Settings"
+        "Alerts": "Alerts",
+        "Data" : "Data",
+        "IL Config" : "IncrementalLearning",
+        "Settings" : "Settings"
     }
 
+# with mainview:
+#     # Load và chạy trang tương ứng
+#     if selected_page in page_mapping:
+#         module_name = page_mapping[selected_page]
+#         module = importlib.import_module(module_name)
+        
+#         # Gọi hàm main của trang (theo chuẩn)
+#         if hasattr(module, "main"):
+#             module.main()
+#         else:
+#             st.error(f"Trang {selected_page} chưa có hàm main()")
+#     else:
+#         st.warning("Chọn một mục từ menu bên trái.")
+        
 with mainview:
     # Load và chạy trang tương ứng
     if selected_page in page_mapping:
         module_name = page_mapping[selected_page]
-        module = importlib.import_module(module_name)
+        module = importlib.import_module("src.app.pages."+module_name)
         
         # Gọi hàm main của trang (theo chuẩn)
         if hasattr(module, "main"):

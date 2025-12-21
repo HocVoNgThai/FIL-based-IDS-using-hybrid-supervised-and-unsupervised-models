@@ -10,7 +10,6 @@ import gc
 
 
 # MINE
-sys.path.append("../")
 from src.Utils.FlowFlushTransform import FlowFlushTransformer, STANDARD_COLS, STANDARD_SCALER_PATH, MINMAX_SCALER_PATH, MINMAX_COLS
 
 class FlushWorker(threading.Thread):

@@ -10,3 +10,6 @@ log
 test*
 secret*
 *.jsonl
+app_logs*
+flows_parquet*
+temp*

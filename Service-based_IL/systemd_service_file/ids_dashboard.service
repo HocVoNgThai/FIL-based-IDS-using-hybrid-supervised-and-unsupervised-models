@@ -1,0 +1,21 @@
+[Unit]
+Description=IDS Streamlit Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/incremental_ids
+ExecStart=/opt/incremental_ids/venv/bin/python -m streamlit run src/app/app.py \
+    --server.address 0.0.0.0 \
+    --server.port 8501 \
+    --server.headless true
+
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

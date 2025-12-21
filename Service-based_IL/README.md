@@ -77,125 +77,8 @@ Worker: chạy tuần tự → AE/OCSVM/XGB → save model
 
 # CÁC CÔNG PHÁP FIX LỖI/BẾ TẮC
 ### PIP REQUIREMENTS
-Có nha — và đây là câu hỏi rất “đúng người đúng bệnh” 😄
-Cái format kiểu:
-
-keras @ file:///home/conda/feedstock_root/build_artifacts/keras_1747722781675/work
-
-
-là đặc sản của conda list --export / pip freeze khi package được cài từ build path nội bộ của conda. Mang sang máy khác là… toang.
-
-Dưới đây là những cách chuẩn – gọn – an toàn, tuỳ mục đích dùng của bạn.
-
-✅ CÁCH 1 (KHUYẾN NGHỊ): pip list --format=freeze ✅
-
-Trong conda env:
-
-pip list --format=freeze > requirements.txt
-
-
-✅ Kết quả:
-
-keras==3.1.1
-numpy==1.26.4
-pandas==2.1.3
-
-
-✅ Không có @ file://
-✅ Dùng được ở máy khác
-✅ Tương thích pip install -r requirements.txt
-
-👉 Đây là cách nên dùng nhất nếu bạn deploy bằng pip
-
-❌ KHÔNG DÙNG: pip freeze (trong conda)
-pip freeze > requirements.txt
-
-
-❌ Dễ sinh:
-
-keras @ file:///home/conda/feedstock_root/...
-
-
-Vì:
-
-pip thấy package được conda build
-
-nên trỏ về local build path (chỉ tồn tại ở máy bạn)
-
-✅ CÁCH 2: dùng conda env export nhưng LOẠI pip path rác
-1️⃣ Export YAML chuẩn
-conda env export > environment.yml
-
-2️⃣ Khi dùng cho máy khác
-conda env create -f environment.yml
-
-
-✅ Tốt cho conda-to-conda
-❌ Không phù hợp nếu bạn muốn requirements.txt
-
-✅ CÁCH 3: Convert conda → pip chuẩn (lọc path)
-conda list --export \
-| grep -v "@" \
-| grep -v "file:" \
-| cut -d'=' -f1 \
-| sed 's/_/-/g' \
-> requirements.txt
-
-
-Nhưng ⚠️:
-
-Không có version
-
-Chỉ nên dùng khi:
-
-bạn chấp nhận version mới
-
-dùng cho dev/debug
-
-✅ CÁCH 4 (VIP – chuẩn nhất cho ML): split conda + pip
-1️⃣ Conda package (nặng, system)
-conda list --export > conda.txt
-
-2️⃣ Pip-only package
-pip list --format=freeze > requirements.txt
-
-
-Deploy:
-
-conda install --file conda.txt
-pip install -r requirements.txt
-
-
-✅ Rất ổn cho:
-
-CUDA
-
-pytorch / tensorflow
-
-scipy
-
-🎯 Cách mình khuyên dùng cho bạn (context ML + IDS):
-
-👉 Dùng cách 1
-
-pip list --format=freeze > requirements.txt
-
-
-và đảm bảo:
-
-pip install --upgrade pip
-pip install -r requirements.txt
-
-⚠️ Checklist nhanh tránh bị dính @ file://
-
-✅ Cài package bằng pip install
-
-❌ Tránh conda install keras nếu định export requirements
-
-✅ Prefer pip list --format=freeze
-
-❌ Không dùng pip freeze trong conda
-
+Dùng luôn pigar
+> pigar generate
 
 ### SERVICE
 while read p; do
@@ -203,3 +86,21 @@ while read p; do
   pip install "$p" || echo "❌ Failed: $p"
 done < requirements.txt
 
+
+Việc sử dụng git rebase thay vì git merge khi cập nhật code từ server giúp lịch sử commit của bạn luôn là một đường thẳng, sạch sẽ và dễ theo dõi hơn.Dưới đây là quy trình chuẩn để thực hiện việc này mà không gây xung đột (conflict) lung tung hay làm hỏng repo:Quy trình 4 bước chuẩn "vàng"Giả sử bạn đang làm việc trên branch feature-abc.1. Commit công việc hiện tạiTrước khi kéo code mới về, hãy đảm bảo bạn đã commit mọi thay đổi đang làm dở.Bashgit add .
+git commit -m "Tính năng đang làm: mô tả ngắn gọn"
+Lưu ý: Nếu chưa muốn commit vì code chưa xong, bạn có thể dùng git stash để tạm cất đi.2. Cập nhật code mới nhất từ serverThay vì dùng git pull (thường sẽ tự động tạo một merge commit), hãy dùng flag --rebase:Bashgit pull --rebase origin main
+(Thay main bằng tên branch chính của dự án bạn, ví dụ develop hoặc master).3. Giải quyết xung đột (Nếu có)Nếu có file bị trùng lặp chỉnh sửa, Git sẽ dừng lại và báo lỗi. Bạn cần:Mở file bị lỗi lên và sửa lại cho đúng.Sau khi sửa xong, gõ: git add <tên_file_đã_sửa>.Tiếp tục quá trình rebase bằng lệnh:Bashgit rebase --continue
+Lưu ý: Tuyệt đối không dùng git commit trong lúc này.4. Push code lên serverSau khi rebase xong, branch của bạn bây giờ đã nằm "đè" lên trên những commit mới nhất của main.Nếu bạn chưa bao giờ push branch này lên: Chỉ cần git push origin feature-abc.Nếu bạn đã từng push branch này lên trước đó: Bạn buộc phải dùng lệnh "ép" vì lịch sử đã thay đổi:Bashgit push --force-with-lease
+(Dùng --force-with-lease an toàn hơn --force vì nó sẽ không đè nếu có ai đó khác cũng vừa push vào branch của bạn).Tại sao nên dùng cách này?Đặc điểmGit Merge (Mặc định)Git RebaseLịch sửChằng chịt, có nhiều nhánh rẽLà một đường thẳng tắpMerge CommitTạo ra commit rác kiểu "Merge branch..."Không tạo commit rácTính an toànRất an toàn, dễ hiểuCần hiểu rõ mình đang làm gìMột quy tắc "sống còn" khi dùng RebaseChỉ rebase trên những branch cá nhân (feature branch của riêng bạn). Tuyệt đối không bao giờ rebase trên các branch chung như main hay develop vì nó sẽ làm thay đổi lịch sử của tất cả mọi người trong team, gây ra thảm họa về quản lý code.Bạn có đang gặp phải thông báo lỗi cụ thể nào khi thực hiện các bước trên không? Tôi có thể giải thích chi tiết lỗi đó cho bạn.
+
+
+
+# Công pháp pip
+pip list --format=freeze > requirements.txt
+
+
+# Nếu chạy service lỗi tại ký tự ^M$ của windows 
+sed -i 's/\r$//' install_service.sh
+> Sợ thì tạo backup
+sed -i.bak 's/\r$//' install_service.sh
