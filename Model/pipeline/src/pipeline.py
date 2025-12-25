@@ -14,9 +14,8 @@ class SequentialHybridPipeline:
         
         xgb_pred, xgb_conf = self.xgb.predict_with_confidence(X)
         
-        # [OPTIMIZATION 1] Giảm ngưỡng để tin tưởng XGBoost hơn
-        CONF_REJECT = 0.7  # Giảm nhẹ từ 0.7
-        CONF_HIGH = 0.9    # Giảm từ 0.9 -> Giảm lượng mẫu rơi vào Gray Zone
+        CONF_REJECT = 0.7  
+        CONF_HIGH = 0.9   
         
         ae_is_normal = self.ae.is_normal(X) if self.ae else None
         ocsvm_is_normal = (self.ocsvm.decision_function(X) > 0) if self.ocsvm else None
@@ -28,34 +27,28 @@ class SequentialHybridPipeline:
             p_val = int(xgb_pred[i])
             conf = xgb_conf[i]
             
-            # 1. Low Conf -> Unknown (Vẫn giữ để loại bỏ tấn công lạ thực sự)
             if conf < CONF_REJECT:
                 final_preds.append("UNKNOWN")
                 stats["low_unk"] += 1
                 continue
-            
-            # 2. Attack -> Chấp nhận ngay
+
             if p_val != 0:
                 final_preds.append(self.label_map.get(p_val, "UNKNOWN"))
                 stats["atk_acc"] += 1
             else:
-                # 3. Benign High Conf -> Chấp nhận
+
                 if conf >= CONF_HIGH:
                     final_preds.append("BENIGN")
                     stats["high_ben"] += 1
                 else:
-                    # 4. Gray Zone (0.65 <= conf < 0.85)
-                    # [OPTIMIZATION 2] Logic mềm dẻo hơn (OR logic hoặc Voting)
+
                     is_safe = True 
                     
                     if self.ae and self.ocsvm:
-                        # Logic cũ: ae_is_normal[i] and ocsvm_is_normal[i] (Quá chặt)
-                        # Logic MỚI: Chỉ cần 1 trong 2 bảo là Normal thì tạm tin là Normal
-                        # (Vì XGB đã bảo là Benign rồi, ta cần bằng chứng mạnh để bác bỏ nó)
+
                         if ae_is_normal[i] and ocsvm_is_normal[i]: 
                             is_safe = True
                         else:
-                            # Cả 2 đều bảo là Abnormal -> Chắc chắn là Unknown
                             is_safe = False
                     elif self.ae:
                         is_safe = ae_is_normal[i]
@@ -82,7 +75,6 @@ class SequentialHybridPipeline:
         X_benign = X_new[y_new == 0]
         if len(X_benign) > 0:
             if self.ae: 
-                # [OPTIMIZATION 3] Tăng epoch để AE học kỹ Benign mới hơn
                 print(f"   -> Fine-tuning AE on {len(X_benign)} samples (50 epochs)...")
                 self.ae.train_on_known_data(X_benign, epochs=50, verbose=False)
             if self.ocsvm: 

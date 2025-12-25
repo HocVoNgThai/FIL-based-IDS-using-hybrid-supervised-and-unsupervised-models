@@ -7,27 +7,27 @@ import joblib
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.utils import (
     ResourceTracker, ILMetrics, 
-    plot_resource_usage, # [OK] Đã có trong utils
-    plot_il_matrix, # [OK] Đã sửa tên
-    plot_il_metrics_trends, # [New]
-    plot_detailed_resource_usage, # [New]
-    plot_all_models_performance, # [New]
-    plot_unknown_detection_performance # [New]
+    plot_resource_usage, 
+    plot_il_matrix,
+    plot_il_metrics_trends,
+    plot_detailed_resource_usage, 
+    plot_all_models_performance, 
+    plot_unknown_detection_performance
 )
 
 def run_complete_workflow():
     print("🚀 STARTING COMPLETE WORKFLOW")
     tracker = ResourceTracker()
     il_metrics = ILMetrics()
-    global_history = {} # Lưu metrics của tất cả models qua các Scenario
-    unknown_stats = {}  # Lưu metrics unknown
+    global_history = {} 
+    unknown_stats = {}  
     os.makedirs("results/overall", exist_ok=True)
 
     try:
         # === Scenario 0 ===
         print("\n📚 Scenario 0"); tracker.start()
-        from session0 import session0_initial_training
-        models0, loader, pipeline0, acc_s0, metrics_s0 = session0_initial_training()
+        from Scenario0 import Scenario0_initial_training
+        models0, loader, pipeline0, acc_s0, metrics_s0 = Scenario0_initial_training()
         res0 = tracker.stop()
         
         il_metrics.record(0, 0, acc_s0)
@@ -37,8 +37,8 @@ def run_complete_workflow():
         
         # === Scenario 1 ===
         print("\n🔍 Scenario 1"); tracker.start()
-        from session1 import session1_workflow
-        pipeline1, results_s1 = session1_workflow()
+        from Scenario1 import Scenario1_workflow
+        pipeline1, results_s1 = Scenario1_workflow()
         res1 = tracker.stop()
         
         il_metrics.record(1, 0, results_s1['acc_s0'])
@@ -50,8 +50,8 @@ def run_complete_workflow():
         
         # === Scenario 2 ===
         print("\n🎯 Scenario 2"); tracker.start()
-        from session2 import session2_workflow
-        pipeline2, results_s2 = session2_workflow()
+        from Scenario2 import Scenario2_workflow
+        pipeline2, results_s2 = Scenario2_workflow()
         res2 = tracker.stop()
         
         il_metrics.record(2, 0, results_s2['acc_s0'])

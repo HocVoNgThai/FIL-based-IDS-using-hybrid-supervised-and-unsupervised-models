@@ -10,14 +10,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.models import AETrainer, IncrementalOCSVM, OpenSetXGBoost
 from src.pipeline import SequentialHybridPipeline
 from src.utils import (
-    SessionDataLoader, SessionManager, 
+    ScenarioDataLoader, ScenarioManager, 
     plot_cm, get_label_name, calculate_unknown_metrics,
     evaluate_final_pipeline
 )
 
 # --- CẤU HÌNH ---
 BASE_DATA_DIR = "merge1.4_3-4-5/Scenario-from-3-incre-4class-incre-6class"
-GLOBAL_SCALER_PATH = "sessions/global_scaler.joblib"
+GLOBAL_SCALER_PATH = "Scenarios/global_scaler.joblib"
 SAVE_ROOT = "results/comprehensive_eval"
 
 # Cấu hình Tối ưu (như đã bàn)
@@ -90,9 +90,9 @@ def run_evaluation():
     print("🚀 STARTING COMPREHENSIVE EVALUATION (Logic Optimized + Correct Pre-IL CM)")
     os.makedirs(SAVE_ROOT, exist_ok=True)
     
-    loader = SessionDataLoader()
+    loader = ScenarioDataLoader()
     loader.load_scaler(GLOBAL_SCALER_PATH)
-    mgr = SessionManager()
+    mgr = ScenarioManager()
 
     # ==============================================================================
     # 1. Scenario 0: EVAL PHASE
@@ -102,7 +102,7 @@ def run_evaluation():
     os.makedirs(save_dir, exist_ok=True)
     
     # Load Data & Model
-    X_test, y_test = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "test_session0.parquet"))
+    X_test, y_test = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "test_Scenario0.parquet"))
     X_test = loader.apply_scaling(X_test, fit=False)
     pipeline = load_models(0, mgr)
     
@@ -121,7 +121,7 @@ def run_evaluation():
     os.makedirs(save_dir_pre, exist_ok=True)
     
     # Load Train Data (Chứa Reconn)
-    X_train1, y_train1 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "train_session1.parquet"))
+    X_train1, y_train1 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "train_Scenario1.parquet"))
     X_train1 = loader.apply_scaling(X_train1, fit=False)
     
     # Dùng Model Scenario 0 (Chưa biết Reconn)
@@ -136,14 +136,14 @@ def run_evaluation():
     plot_cm(y_true_mapped, preds_pre, "CM Pipeline (Pre-IL) - Mapped", os.path.join(save_dir_pre, "cm_pre_il_mapped.png"))
     
     # Tính metrics unknown riêng
-    calculate_unknown_metrics(y_train1, preds_pre, unknown_label=3, save_dir=save_dir_pre, session_name="Scenario1_PreIL")
+    calculate_unknown_metrics(y_train1, preds_pre, unknown_label=3, save_dir=save_dir_pre, Scenario_name="Scenario1_PreIL")
 
     # --- PHASE 3: POST-IL ---
     print("\n>>> Phase 3: Post-IL (Target: Reconn -> Reconn)")
     save_dir_post = os.path.join(SAVE_ROOT, "Scenario1_phase3_post_il")
     os.makedirs(save_dir_post, exist_ok=True)
     
-    X_test1, y_test1 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "test_session1.parquet"))
+    X_test1, y_test1 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "test_Scenario1.parquet"))
     X_test1 = loader.apply_scaling(X_test1, fit=False)
     
     # Load Model Scenario 1 (Đã học Reconn)
@@ -162,7 +162,7 @@ def run_evaluation():
     save_dir_pre = os.path.join(SAVE_ROOT, "Scenario2_phase1_pre_il")
     os.makedirs(save_dir_pre, exist_ok=True)
     
-    X_train2, y_train2 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "train_session2.parquet"))
+    X_train2, y_train2 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "train_Scenario2.parquet"))
     X_train2 = loader.apply_scaling(X_train2, fit=False)
     
     # Dùng Model Scenario 1 (Chưa biết MITM/DNS)
@@ -175,14 +175,14 @@ def run_evaluation():
     print("   Generating mapped CM for Pre-IL...")
     plot_cm(y_true_mapped, preds_pre, "CM Pipeline (Pre-IL) - Mapped", os.path.join(save_dir_pre, "cm_pre_il_mapped.png"))
     
-    calculate_unknown_metrics(y_train2, preds_pre, unknown_label=[4, 5], save_dir=save_dir_pre, session_name="Scenario2_PreIL")
+    calculate_unknown_metrics(y_train2, preds_pre, unknown_label=[4, 5], save_dir=save_dir_pre, Scenario_name="Scenario2_PreIL")
 
     # --- PHASE 3: POST-IL ---
     print("\n>>> Phase 3: Post-IL")
     save_dir_post = os.path.join(SAVE_ROOT, "Scenario2_phase3_post_il")
     os.makedirs(save_dir_post, exist_ok=True)
     
-    X_test2, y_test2 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "test_session2.parquet"))
+    X_test2, y_test2 = loader.load_data_raw(os.path.join(BASE_DATA_DIR, "test_Scenario2.parquet"))
     X_test2 = loader.apply_scaling(X_test2, fit=False)
     
     # Load Model Scenario 2
