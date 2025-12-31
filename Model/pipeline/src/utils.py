@@ -118,8 +118,8 @@ def plot_resource_usage(log, save_path):
     # In giá trị Time (nằm giữa cột)
     for bar in bars:
         height = bar.get_height()
-        ax1.text(bar.get_x() + bar.get_width()/2., height/2, 
-                 f'{height:.1f}s', ha='center', va='lower', color='blue', fontweight='bold', fontsize=11)
+        ax1.text(bar.get_x() + bar.get_width()/2., height + 5, 
+                 f'{height:.1f}s', ha='center', va='bottom', color='blue', fontweight='bold', fontsize=11)
 
     # --- 2. Line Charts (CPU, RAM, GPU) ---
     ax2 = ax1.twinx()
@@ -173,7 +173,7 @@ def plot_detailed_resource_usage(history_dict, Scenario_name, save_path):
     ax1.plot(time_axis, history_dict['cpu'], label='CPU %', color='red'); ax1.plot(time_axis, history_dict['ram'], label='RAM %', color='green')
     ax1.set_ylabel('Usage (%)'); ax1.set_title(f'Resource Detail - {Scenario_name}'); ax1.legend()
     ax2.plot(time_axis, history_dict['gpu_mem'], label='GPU Mem (MB)', color='purple'); ax2.set_ylabel('MB'); ax2.set_xlabel('Time (s)'); ax2.legend()
-    plt.tight_layout(); os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
+    plt.tight_layout(); os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path, dpi=300); plt.close()
 
 def plot_il_metrics_trends(il, save_path):
     """Biểu đồ biến động F, BWT, AvgAcc với Text Annotations"""
@@ -209,7 +209,7 @@ def plot_il_metrics_trends(il, save_path):
     plt.legend()
     
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path)
+    plt.savefig(save_path, dpi=300)
     plt.close()
 
 def plot_il_matrix(il, save_path):
@@ -220,7 +220,7 @@ def plot_il_matrix(il, save_path):
     plt.figure(figsize=(8, 6))
     sns.heatmap(matrix, annot=True, fmt='.4f', cmap='YlGnBu', xticklabels=[f'Test C{s}' for s in Scenarios], yticklabels=[f'Train C{s}' for s in Scenarios])
     plt.title('IL Accuracy Matrix'); plt.tight_layout()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path, dpi=300); plt.close()
 
 # ==================== PER-CLASS ANALYSIS FUNCTIONS ====================
 
@@ -313,15 +313,22 @@ def analyze_and_plot_class_details(y_true, y_pred, title, save_dir, merge_labels
     for i, metric in enumerate(metrics_plot):
         vals = df[metric].values
         rects = ax_bar.bar(x + (i - 1.5) * width, vals, width, label=metric, color=colors[i])
-        for rect in rects:
-            if rect.get_height() > 0.01:
-                ax_bar.text(rect.get_x() + rect.get_width()/2., rect.get_height() + 0.01, 
+        if len(rects) <= 5:
+            for rect in rects:
+                if rect.get_height() > 0.01:
+                    ax_bar.text(rect.get_x() + rect.get_width()/2., rect.get_height() + 0.01, 
                             f"{rect.get_height():.4f}", ha='center', va='bottom', 
                             fontsize=8, fontweight='bold')
+        else:
+            for rect in rects:
+                if rect.get_height() > 0.01:
+                    ax_bar.text(rect.get_x() + rect.get_width()/2., rect.get_height() + 0.01, 
+                            f"{rect.get_height():.4f}", ha='center', va='bottom', 
+                            fontsize=7, fontweight='bold')
 
     ax_bar.set_title(f"Per-Class Performance Metrics: {title}", fontweight='bold', fontsize=14)
     ax_bar.set_xticks(x); ax_bar.set_xticklabels(ordered, rotation=0, fontsize=11, fontweight='bold')
-    ax_bar.set_ylabel("Score"); ax_bar.set_ylim(0, 1.25)
+    ax_bar.set_ylabel("Score", fontsize=11, fontweight='bold'); ax_bar.set_ylim(0, 1.1)
     ax_bar.legend(loc='upper right', ncol=4); ax_bar.grid(axis='y', alpha=0.3)
     
     plt.tight_layout()
@@ -391,7 +398,7 @@ def plot_all_models_performance(all_metrics_history, save_dir):
         ax.set_xticks(x)
         ax.set_xticklabels(Scenarios, fontsize=11)
         ax.set_ylabel('Score', fontsize=11)
-        ax.set_ylim(0, 1.35)
+        ax.set_ylim(0, 1.1)
         ax.grid(axis='y', alpha=0.3)
         
         # Legend
@@ -401,7 +408,7 @@ def plot_all_models_performance(all_metrics_history, save_dir):
     os.makedirs(save_dir, exist_ok=True)
     
     save_path = f"{save_dir}/all_models_comparison_bar.png"
-    plt.savefig(save_path)
+    plt.savefig(save_path, dpi=300)
     plt.close()
     print(f"Comparison bar charts saved to {save_path}")
 
@@ -414,7 +421,7 @@ def plot_unknown_detection_performance(unknown_stats, save_dir):
     bars = plt.bar(x, pre_recalls, width=0.5, label='Unknown Detection (Recall)', color='#e74c3c')
     plt.xticks(x, Scenarios); plt.ylim(0, 1.1); plt.title('Unknown Class Detection (Pre-IL)'); plt.legend()
     for bar in bars: plt.text(bar.get_x()+bar.get_width()/2, bar.get_height(), f'{bar.get_height():.2%}', ha='center', va='bottom')
-    os.makedirs(save_dir, exist_ok=True); plt.savefig(f"{save_dir}/unknown_performance.png"); plt.close()
+    os.makedirs(save_dir, exist_ok=True); plt.savefig(f"{save_dir}/unknown_performance.png", dpi=300); plt.close()
 
 class ScenarioDataLoader:
     def __init__(self): self.scaler = StandardScaler(); self.is_fitted = False
@@ -474,7 +481,7 @@ def plot_cm(y_true, y_pred, title, save_path):
     plt.figure(figsize=(10, 8))
     sns.heatmap(cm_norm, annot=True, fmt='.1%', cmap='Blues', xticklabels=ordered, yticklabels=ordered, vmin=0, vmax=1)
     plt.title(f"{title} (%)"); plt.ylabel('True'); plt.xlabel('Pred'); plt.tight_layout()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path, dpi=300); plt.close()
 
 def plot_binary_cm(y_true, y_pred, title, save_path):
     cm = confusion_matrix(y_true, y_pred)
@@ -484,7 +491,7 @@ def plot_binary_cm(y_true, y_pred, title, save_path):
     plt.figure(figsize=(6, 5))
     sns.heatmap(cm_norm, annot=True, fmt='.1%', cmap='Reds', xticklabels=['Abnormal', 'Normal'], yticklabels=['Abnormal', 'Normal'], vmin=0, vmax=1)
     plt.title(f"{title} (%)"); plt.ylabel('True'); plt.xlabel('Pred'); plt.tight_layout()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path, dpi=300); plt.close()
 
 def plot_unknown_binary_cm(y_true, preds, unknown_label, save_path, Scenario_name):
     y_true = np.array(y_true); preds = np.array(preds)
@@ -504,7 +511,7 @@ def plot_unknown_binary_cm(y_true, preds, unknown_label, save_path, Scenario_nam
     plt.figure(figsize=(6, 5))
     sns.heatmap(cm_norm, annot=True, fmt='.1%', cmap='Oranges', xticklabels=['Others', 'Pred Unknown'], yticklabels=['True Others', 'True Unknown'], vmin=0, vmax=1)
     plt.title(f"Unknown Detection Confusion Matrix - {Scenario_name}"); plt.tight_layout()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path, dpi=300); plt.close()
 
 def plot_metrics_bar(report_dict, title, save_path):
     metrics = ['precision', 'recall', 'f1-score']
@@ -514,7 +521,7 @@ def plot_metrics_bar(report_dict, title, save_path):
     bars = plt.bar(metrics, values, color=['#3498db', '#2ecc71', '#e74c3c'])
     for bar in bars: plt.text(bar.get_x() + bar.get_width()/2., bar.get_height(), f'{bar.get_height():.4f}', ha='center', va='bottom')
     plt.title(title); plt.ylim(0, 1.1); plt.ylabel('Score'); plt.tight_layout()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path, dpi=300); plt.close()
 
 def calculate_unknown_metrics(y_true, preds, unknown_label, save_dir, Scenario_name):
     y_true = np.array(y_true); preds = np.array(preds)
@@ -666,7 +673,7 @@ def plot_scenarios_comparison(results_dict, save_path, Scenario_name):
                  ha='center', va='bottom', fontweight='bold', fontsize=9, color='black')
         
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path)
+    plt.savefig(save_path, dpi=300)
     plt.close()
     print(f"Comparison chart saved to {save_path}")
 
@@ -710,12 +717,12 @@ def plot_ablation_evolution(ablation_history, save_dir):
 
         ax.set_title(f'{metric} Evolution')
         ax.set_xticks(x); ax.set_xticklabels(Scenarios)
-        ax.set_ylim(0.6, 1.05); ax.grid(True, alpha=0.3)
+        ax.set_ylim(0.6, 1.1); ax.grid(True, alpha=0.3)
         if i == 0: ax.legend(loc='lower left') # Chỉ hiện legend ở hình đầu cho gọn
 
     plt.tight_layout()
     os.makedirs(save_dir, exist_ok=True)
-    plt.savefig(f"{save_dir}/ablation_evolution.png")
+    plt.savefig(f"{save_dir}/ablation_evolution.png", dpi=300)
     plt.close()
     print(f"Ablation evolution chart saved to {save_dir}/ablation_evolution.png")
 
@@ -752,7 +759,7 @@ def plot_unknown_detection_comparison(results_data, save_path):
     ax.set_title('Unknown Threat Detection Comparison (Scenario 1 vs Scenario 2)', fontsize=14, fontweight='bold')
     ax.set_xticks(x)
     ax.set_xticklabels(scenarios)
-    ax.set_ylim(0, 1.15) # Tăng trần để chứa text
+    ax.set_ylim(0, 1) # Tăng trần để chứa text
     ax.legend()
     ax.grid(axis='y', alpha=0.3)
 
@@ -771,7 +778,7 @@ def plot_unknown_detection_comparison(results_data, save_path):
 
     fig.tight_layout()
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path)
+    plt.savefig(save_path, dpi=300)
     plt.close()
     print(f"Unknown detection comparison chart saved to {save_path}")
 
@@ -857,12 +864,12 @@ def plot_pipeline_evolution_comparison(evolution_data, save_path):
     ax.set_title('Pipeline Performance Evolution (Pre-IL vs Post-IL)', fontweight='bold', fontsize=16)
     ax.set_xticks(x)
     ax.set_xticklabels(phases, fontsize=11, fontweight='bold')
-    ax.set_ylim(0, 1.35) # Tăng trần để chứa text xoay
+    ax.set_ylim(0, 1.1) # Tăng trần để chứa text xoay
     ax.legend(loc='upper right', ncol=4, fontsize=11)
     ax.grid(axis='y', alpha=0.3)
     
     plt.tight_layout()
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path, dpi=300)
+    plt.savefig(save_path, dpi=1000)
     plt.close()
     print(f"Evolution chart saved to {save_path}")

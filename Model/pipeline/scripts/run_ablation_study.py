@@ -16,7 +16,7 @@ from src.utils import (
     plot_ablation_evolution, plot_unknown_detection_comparison, 
 )
 
-BASE_DATA_DIR = "merge1.4_3-4-5/Scenario-from-3-incre-4class-incre-6class"
+BASE_DATA_DIR = "merge1.4_3-4-5/case-from-3-incre-4class-incre-6class"
 GLOBAL_SCALER_PATH = "Scenarios/global_scaler.joblib"
 SAVE_DIR = "results/ablation_study"
 

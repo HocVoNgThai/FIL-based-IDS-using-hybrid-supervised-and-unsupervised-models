@@ -6,7 +6,7 @@ from src.models import AETrainer, IncrementalOCSVM, OpenSetXGBoost
 from src.pipeline import SequentialHybridPipeline
 from src.utils import *
 
-BASE_DATA_DIR = "merge1.4_3-4-5/Scenario-from-3-incre-4class-incre-6class"
+BASE_DATA_DIR = "merge1.4_3-4-5/case-from-3-incre-4class-incre-6class"
 GLOBAL_SCALER_PATH = "Scenarios/global_scaler.joblib"
 
 def Scenario0_initial_training():
