@@ -1,6 +1,6 @@
 import sys, os
 import zmq
-
+from io import StringIO
 # TIME
 import time # Cần thiết cho việc kiểm tra RCVTIMEO
 from datetime import datetime
@@ -15,6 +15,7 @@ import gc
 import json
 import pandas as pd
 from pathlib import Path
+from collections import deque
 
 # ========= TOÀN CỤC =========
 CURR_DIR = Path.cwd()
@@ -28,6 +29,7 @@ from src.Utils.FlowFlushTransform import FlowFlushTransformer, STANDARD_COLS, CO
 
 from src.Worker.DetectorWorker import DetectorWorker
 from src.Worker.FlushWorker import FlushWorker
+from src.Worker.LogWorker import LogWorker
 
 from src.Components.Detector import Detectors_Pipeline
 from src.Components.Models import AETrainer, IncrementalOCSVM, OpenSetXGBoost
@@ -41,7 +43,10 @@ class FlowZmqServer:
     def __init__( self, 
                  bind_addr="tcp://*:5555", 
                  detect_batch_size=10, 
+                 detect_queue_size= 100000,
+                 log_queue_size = 100000,
                  flush_batch_size=1000, 
+                 flush_queue_size = 100000,
                  n_workers= 2, 
                  output_dir="flows_parquet"):
         
@@ -63,9 +68,9 @@ class FlowZmqServer:
         # Điều này khiến sock.recv() thoát ra sau 500ms nếu không có tin nhắn
         self.sock.setsockopt(zmq.RCVTIMEO, TIMEOUT_MS)
 
-        self.flowFlushTransformer = FlowFlushTransformer(
-            MINMAX_SCALER_PATH, STANDARD_SCALER_PATH, MINMAX_COLS, STANDARD_COLS, decimal_bin=6
-        )
+        # self.flowFlushTransformer = FlowFlushTransformer(
+        #     MINMAX_SCALER_PATH, STANDARD_SCALER_PATH, MINMAX_COLS, STANDARD_COLS, decimal_bin=6
+        # )
         
         self.curr_index_parquet = 0
         
@@ -78,28 +83,68 @@ class FlowZmqServer:
         self.running = True
 
         # QUEUE
-        self.detect_queue = queue.Queue(maxsize = 5000)
-        self.flush_queue = queue.Queue(maxsize=100)
+        self.detect_queue = queue.Queue(maxsize = detect_queue_size)
+        self.flush_queue = queue.Queue(maxsize=flush_queue_size)
+        # self.detect_queue = deque(maxlen= detect_queue_size)
+        # self.flush_queue = deque(maxlen= flush_queue_size) # Discard Old Policy
+        self.log_queue = queue.Queue(maxsize= log_queue_size)
         
         # PIPE
         ae = AETrainer(81, 32); ocsvm = IncrementalOCSVM(nu=0.15); xgb = OpenSetXGBoost(0.75)
         self.mgr = Manager(settings.MODEL_DIR)
         self.mgr.load_models([xgb, ocsvm, ae])
+        print(f"[PY] Model State: {xgb.loaded}, {ocsvm.loaded}, {ae.loaded}")
         self.pipelineDetector = Detectors_Pipeline(xgb= xgb, ocsvm=ocsvm , ae= ae)
+        
+        
+        # LẤY HEADER TRƯỚC KHI THỰC SỰ CHẠY
+        # msg = self.sock.recv(flags=1)
+        # self.header = msg.decode("utf-8")
+        # self.header = self.header.split(',')
+        self.header = self.fetch_header_from_java()
         
         # WORKERS INITIALIZATION
         self.detect_workers = [
-            DetectorWorker(i, self.detect_queue, self.pipelineDetector, self.flowFlushTransformer) #, self.alert_callback
+            DetectorWorker(i, self.detect_queue, self.log_queue, self.pipelineDetector, self.header) #, self.alert_callback
             for i in range(n_workers)
         ]
         
         self.flush_workers = [
-            FlushWorker(i, self.flush_queue) for i in range(1)
+            FlushWorker(i, self.flush_queue, self.header) for i in range(1)
+        ]
+        
+        self.log_workers = [
+            LogWorker(i, self.log_queue) for i in range (1)
         ]
         
         #
         print(f"[PY] ZMQ listening on {bind_addr}")
 
+    # =========================
+    # GET header
+    # =========================
+    def fetch_header_from_java(self, addr="tcp://127.0.0.1:5556"):
+        
+        req_sock = self.ctx.socket(zmq.REQ)
+        req_sock.connect(addr)
+        
+        # Cấu hình timeout để không bị treo nếu Java chưa bật
+        req_sock.setsockopt(zmq.RCVTIMEO, 5000) 
+        
+        print("[PY] Đang yêu cầu Header từ Java...")
+        try:
+            req_sock.send_string("GET_HEADER")
+            header_raw = req_sock.recv_string()
+            print("[PY] Đã lấy được Header thành công.")
+            return header_raw.split(',')
+        
+        except zmq.Again:
+            print("[PY] Lỗi: Java không phản hồi Header sau 5 giây.")
+            return None
+        
+        finally:
+            req_sock.close()
+        
     # =========================
     # Core loop
     # =========================
@@ -108,11 +153,12 @@ class FlowZmqServer:
         
         # START WORKER THREAD
         self.start_workers()
-        
+    
+        print("[PY] ZMQ SERVER - HEADER: ", self.header)
         # LOOP
         while self.running:
             try:
-                msg = self.sock.recv(flags=0)
+                msg = self.sock.recv(flags=zmq.NOBLOCK)
                 self.handle_message(msg)
                 
             except zmq.error.Again:
@@ -131,41 +177,21 @@ class FlowZmqServer:
                 print(f"[ERROR] General Error: {e}")
                 self.running = False
         
-        self.detect()
-        self.flush()
         self.close()
 
     # =========================
     # Message handler
     # =========================
     def handle_message(self, msg: bytes):
-        # Giả định dữ liệu là JSON chứa header và flowDump
-        data = json.loads(msg.decode("utf-8"))
+        
+        try:
+            self.detect_queue.put(msg, timeout=0.2)
+            self.flush_queue.put(msg, timeout=0.2)
+        except queue.Full:
+            print("[WARN] Queue full - Dropping batch to maintain real-time speed")
 
-        # # GỢI Ý: Kiểm tra xem message có phải là tin nhắn control để tắt server không
-        # if "command" in data and data["command"] == "shutdown":
-        #     self.stop()
-        #     return
-        
-        # Logic trích xuất Flow
-        if self.header is None and "header" in data:
-            self.header = data["header"].split(",")
-
-        # Dump
-        if "flowDump" not in data:
-            return
-        
-        flow_row = data["flowDump"].split(",")
-        
-        # BUFFER DETECT
-        self.detect_buffer.append(flow_row)
-        if len(self.detect_buffer) >= self.detect_batch_size:
-            self.detect()
-        
-        # BUFFER FLUSH
-        self.flush_buffer.append(flow_row)
-        if len(self.flush_buffer) >= self.flush_batch_size:
-            self.flush()
+        except Exception as e:
+            print(f"[ERROR] handle_message: {e}")
 
     # =========================
     # WORKERS
@@ -173,75 +199,10 @@ class FlowZmqServer:
     def start_workers(self):
         for w in self.detect_workers:
             w.start()
+        for w in self.log_workers:
+            w.start()
         for w in self.flush_workers:
             w.start()
-            
-    # =========================
-    # FLUSH WORKER
-    # =========================
-    def flush_old(self):
-        if not self.flush_buffer or self.header is None:
-            return
-
-        # Đảm bảo header có số lượng cột khớp với buffer
-        try:
-            df = pd.DataFrame(self.flush_buffer, columns=self.header)
-        except ValueError as e:
-            print(f"[ERROR] Column/Data mismatch during DataFrame creation: {e}")
-            self.flush_buffer.clear()
-            return
-        
-        fname = self.flowFlushTransformer.flush(df)
-        
-        if fname != None:
-            print(f"[PY] ✔ Flushed {len(self.flush_buffer)} flows → {fname}")
-        
-        self.flush_buffer.clear()
-    
-    def flush(self):
-        if not self.flush_buffer or self.header is None:
-            return
-
-        # Đảm bảo header có số lượng cột khớp với buffer
-        try:
-            df = pd.DataFrame(self.flush_buffer, columns=self.header)
-        except ValueError as e:
-            print(f"[ERROR] Column/Data mismatch during DataFrame creation: {e}")
-            self.flush_buffer.clear()
-            return
-        
-        self.flush_queue.put(df)
-        print(f"[PY] ✔ Push into Flush Queue {len(self.flush_buffer)} flows")
-        self.flush_buffer.clear()
-
-    
-    # =========================
-    # DETECT WORKER
-    # =========================         
-    def detect(self):
-        if not self.detect_buffer or self.header is None:
-            return
-
-        # Đảm bảo header có số lượng cột khớp với buffer
-        try:
-            df = pd.DataFrame(self.detect_buffer, columns=self.header)
-        except ValueError as e:
-            print(f"[ERROR] Column/Data mismatch during DataFrame creation: {e}")
-            self.detect_buffer.clear()
-            return
-
-        self.detect_queue.put(df)
-        print(f"[PY] ✔ Push into Queue {len(self.detect_buffer)} flows")
-        self.detect_buffer.clear()
-    
-    # =========================
-    # Alert Callback
-    # =========================
-    # def alert_callback(self, alert):
-    #     """
-    #     Gửi cho Streamlit (file, socket, redis, memory, ...)
-    #     """
-    #     print(f"[ALERT] {alert}")
         
     # =========================
     # Graceful shutdown
@@ -254,36 +215,34 @@ class FlowZmqServer:
             # Tùy thuộc vào phiên bản ZMQ/Python, có thể cần gọi ctx.term()
         
     def close(self):
-        
         print("[PY] Closing worker, zmq, ...")
-        # for _ in self.flush_workers:
-        #     self.flush_queue.put(pd.DataFrame(None))
-
-        # for _ in self.detect_workers:
-        #     self.detect_queue.put(pd.DataFrame(None))
         
-        # chờ queue hết
-        # self.detect_queue.join()
-        # self.flush_queue.join()
-
-        # CLOSE WORKER
-        # self.detect_queue.clear()
-        # self.flush_queue.clear()
-            
+        # ================================
+        # STOP WORKERS
+        # ================================ 
         for worker in self.detect_workers:
+            worker.stop()
+        for worker in self.log_workers:
             worker.stop()
         for worker in self.flush_workers:
             worker.stop()
-            
+        
         for w in self.detect_workers:
             w.join(timeout=5)
 
+        for w in self.log_workers:
+            w.join(timeout=5)
+        
         for w in self.flush_workers:
             w.join(timeout=5)
         
+        gc.collect()
         print("[PY] All detector workers stopped")
         
+        # ====================
         # CLOSE SOCKET
+        # ====================
+        
         try:
             self.sock.close(linger=1000) #(mili sec)
         except ValueError as e:
@@ -305,9 +264,12 @@ class FlowZmqServer:
 if __name__ == "__main__":
     server = FlowZmqServer(
         bind_addr="tcp://*:5555",
-        detect_batch_size=10,
-        flush_batch_size= 2000,
-        n_workers=2
+        detect_batch_size=256,
+        detect_queue_size= 100000, # 
+        log_queue_size= 100000,
+        flush_batch_size= 12800,
+        flush_queue_size= 100000,
+        n_workers=5
     )
 
     # Đăng ký hàm stop cho các tín hiệu

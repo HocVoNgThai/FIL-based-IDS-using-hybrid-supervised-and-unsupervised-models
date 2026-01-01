@@ -33,7 +33,7 @@ DNS_Spoofing: 4 -- old: 2
 IL Merlin
 Benign: 0
 DDoS: 1 - old: 1
-DoS: 2 -- old: 2
+DoS: 2 -- old: 3
 Reconnaisance: 3 --old :7
 Merlin: 4 -- old:5
 
@@ -44,4 +44,14 @@ DDoS: 1 - old: 1
 DoS: 2 -- old: 3
 Reconnaisance: 3 --old :7
 MITM_ArpSpoofing: 4
-DNS_Spoofing: 5 --old: 2
+DNS_Spoofing: 5 -- old: 2
+
+
+IL 3 4 5 _mitm scan
+Benign: 0
+DDoS: 1 - old: 1
+DoS: 2 -- old: 3
+Reconnaisance: 3 --old :7
+MITM_ArpSpoofing: 4
+Vulnerability_Scan: 5 --old: 8
+

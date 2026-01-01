@@ -64,6 +64,9 @@ sudo chown -R $SUDO_USER:$SUDO_USER /opt/incremental_ids/flows_parquet /opt/incr
 sudo cp -r ./systemd_service_file /opt/incremental_ids/
 sudo cp ./requirements.txt /opt/incremental_ids/
 sudo cp -r ./src /opt/incremental_ids/
+sudo cp -r ./train_data /opt/incremental_ids/
+
+sudo chown -R $SUDO_USER:$SUDO_USER /opt/incremental_ids/train_data
 
 # ===================
 # Tạo venv

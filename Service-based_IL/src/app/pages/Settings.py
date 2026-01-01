@@ -14,13 +14,13 @@ from src.config.settings import settings, Settings
 CONFIG_FILE = Path("src/config/.config")
 
 def main():
-    st.title("⚙️ System Configuration")
+    st.markdown("## <i class='bi bi-gear'></i> System Configuration", unsafe_allow_html=True)
     model_fields = Settings.model_fields
 
     col_left, col_right = st.columns([1.8, 1.2])
     with col_left:
-        st.subheader("🔧 Chỉnh sửa cấu hình")
-        st.caption(f"📂 Thư mục cha hiện tại: {Path.cwd()}")
+        st.markdown("### <i class='bi bi-gear'></i> Chỉnh sửa cấu hình", unsafe_allow_html= True)
+        st.caption(f"≡ Thư mục cha hiện tại: {Path.cwd()}")
         with st.form("settings_form"):
             new_values = {}
 
@@ -45,7 +45,7 @@ def main():
 
                 new_values[field_name] = new_val
 
-            if st.form_submit_button("💾 Lưu cấu hình", type="primary"):
+            if st.form_submit_button("✔ Lưu cấu hình", type="primary"):
                 # Ghi file .config
                 lines = [f"{k}={v}" for k, v in new_values.items()]
                 CONFIG_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -55,7 +55,7 @@ def main():
                 st.rerun()
 
     with col_right:
-        st.subheader("📋 Preview file src/config/.config hiện tại")
+        st.markdown("### <i class='bi bi-file-earmark-ppt'></i> Preview file src/config/.config hiện tại", unsafe_allow_html=True)
 
         if CONFIG_FILE.exists():
             current_content = CONFIG_FILE.read_text(encoding="utf-8")
@@ -64,7 +64,7 @@ def main():
         else:
             st.warning("File `.config` chưa tồn tại. Nó sẽ được tạo khi bạn lưu lần đầu.")
 
-        st.subheader("ℹ️ Giá trị hiện tại trong runtime")
+        st.markdown("### <i class='bi bi-shuffle'></i> Giá trị hiện tại trong runtime", unsafe_allow_html=True)
         current_runtime = {}
         for field_name, field_info in Settings.model_fields.items():  # ← Lấy từ class
             current_value = getattr(settings, field_name)

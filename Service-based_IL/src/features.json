@@ -1,7 +1,7 @@
 {
-    "Src IP": "float32",
+    "Src IP": "float64",
     "Src Port": "int8",
-    "Dst IP": "float32",
+    "Dst IP": "float64",
     "Dst Port": "int8",
     "Protocol": "int8",
     "Flow Duration": "float32",

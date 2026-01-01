@@ -18,10 +18,14 @@ from sklearn.utils import shuffle
 import joblib
 
 
+
 # ======== VARIABLES / FUNC IMPORT=========
 # from FlowZmqServer import CURR_DIR
 from src.config.settings import settings
 from src.Utils.func_convert import *
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 # ======== CONSTANCE =========
 PKL_PATH = settings.PKL_DIR
@@ -57,10 +61,17 @@ class FlowFlushTransformer:
                 
         self.header = header or []
         self.label_mapping = label_mapping or {}
+        self.numeric_cols = self.loadNumericCols()
+        
+        
+        self.all_features = [col for col in self.header if col not in ["Flow ID", "Timestamp", "Label"] ]
+        self.std_idx = [self.all_features.index(c) for c in self.standard_cols if c in self.all_features]
+        self.mmax_idx = [self.all_features.index(c) for c in self.minmax_cols if c in self.all_features]
+        self.sample_remove_idx = [self.all_features.index(c) for c in SAMPLE_COLS_TO_REMOVE if c in self.all_features]
         
         self.decimal_bin = decimal_bin
         
-        # Tồn tại hay không cũng không sao, tạo hết
+        # SAVE DIR        
         self.out_dir = Path(out_dir)
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -69,25 +80,50 @@ class FlowFlushTransformer:
         self.curr_folder = f"{datetime.now().date()}"
         self.curr_index = 0
         
+        # 
+        with open('src/features.json') as json_file:
+            self.feature_config = json.load(json_file)
+        
+        
+        # Tạo sẵn dict dtypes để dùng cho Pandas .astype()
+        self.target_dtypes = {}
+        for key, t_name in self.feature_config.items():
+            if t_name == "int8":
+                self.target_dtypes[key] = np.int8
+            elif t_name == "float64":
+                self.target_dtypes[key] = np.float64
+            elif t_name == "float32":
+                self.target_dtypes[key] = np.float32
+            else:
+                self.target_dtypes[key] = str
+                
+        # self.dtypes = {}
+        # for key, t_name in self.feature_config.items():
+        #     if t_name == "int8":
+        #         self.dtypes[key] = np.int8
+        #     elif t_name == "float64":
+        #         self.dtypes[key] = np.float64
+        #     elif t_name == "float32":
+        #         self.dtypes[key] = np.float32
+        
+        self.scaler  = StandardScaler()
+        self.scaler = joblib.load("src/pkl/scaler.joblib")
+        
         if (not Path.exists(self.out_dir/self.curr_folder)):
             Path.mkdir(self.out_dir/self.curr_folder, parents=True, exist_ok=True)
             
-    def flush(self, rows: list | pd.DataFrame, header = None):
+    def flush(self, df: list | pd.DataFrame, header = None):
         # ---- Build DataFrame ----
-        if isinstance(rows, list):
+        if isinstance(df, list):
             if self.header.len() <1:
                 print("[ERROR] There is no header!")
                 return None
             
-            df = pd.DataFrame(rows, columns= self.header)
-        else:
-            df = rows.copy()
-
-        del rows
-
+            df = pd.DataFrame(df, columns= self.header)
+            
         # XỬ LÍ DATA
-        df, indexdf = self.preProcessingData(df)
-        df = astype(df)
+        df, indexdf = self.preProcessingData_flush(df)
+        df = df.astype(self.target_dtypes, errors='ignore')
         df = pd.concat([indexdf, df], axis= 1)
                 
         # LƯU
@@ -100,58 +136,78 @@ class FlowFlushTransformer:
             Path.mkdir(temp, parents=True, exist_ok=True)
             
         fname = (
-            self.out_dir / self.curr_folder / f"{self.file_prefix}_{self.curr_index}.parquet"
+            # self.out_dir / self.curr_folder / f"{self.file_prefix}_{self.curr_index}.parquet"
+             self.out_dir / self.curr_folder / f"275kpps-20s.parquet"
         )
         
         self.curr_index +=1
+        try:
+            df.to_parquet(fname)
         
-        df.to_parquet(
-            fname,
-            # engine="pyarrow",
-            # compression="snappy"
-        )
-        
-        del df, indexdf
-        gc.collect()
-        
+        except Exception as e:
+            print("[FlowFlushTransform] Cannot flush!")
+            
+        del df, indexdf        
         return fname
     
-    def detect(self, rows: list | pd.DataFrame, header = None):
+    def detect(self, df: list | pd.DataFrame, header = None):
         # ---- Build DataFrame ----
-        if isinstance(rows, list):
-            if self.header.len() <1:
-                print("[ERROR] There is no header!")
-                return None
-            
-            df = pd.DataFrame(rows, columns= self.header)
-        else:
-            df = rows.copy()
-
-        del rows
+        if isinstance(df, list):
+            df = pd.DataFrame(df, columns=self.header)
 
         # XỬ LÍ DATA
-        df, indexdf = self.preProcessingData(df)
-        df = astype(df)
-        gc.collect()        
-
-        self.curr_index +=1
-        
-        retX = df.drop(columns=["Label"]).values # ,"Binary Label"
-        rety = df["Label"]
-        
-        del df
-        gc.collect()
-        
-        return indexdf, retX, rety
+        retX, indexdf = self.preProcessingData(df)
+        # df = df.astype(self.target_dtypes)  
+        retX = self.scaler.transform(retX)
+   
+        return indexdf, retX, None
     
+    # =====================
+    # MAX SPEED
+    # =====================
     def preProcessingData(self, df):
-        # df[self.standard_cols] = df[self.standard_cols].apply(pd.to_numeric)
-        # df[self.standard_cols] = df[self.standard_cols].apply(
-        #     lambda col: np.where(col <= -1, 0, col),
-        #     axis=0
-        # )
+        indexdf = df[COLS_TO_DROP].copy()
         
-        # DROP NA DUP COLS
+        # 1. Chuyển đổi dữ liệu thô sang số (Vectorized)
+        df['Src IP'] = ip_to_float_vectorized(df['Src IP'])
+        df['Dst IP'] = ip_to_float_vectorized(df['Dst IP'])
+        df['Src Port'] = bucket_port_vectorized(df['Src Port'])
+        df['Dst Port'] = bucket_port_vectorized(df['Dst Port'])
+        
+        # df['Protocol'] = pd.to_numeric(df['Protocol'], errors='coerce').fillna(0)
+        
+        X = df[self.all_features].to_numpy(dtype=np.float64, copy=True)
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        mask = (X[:, self.sample_remove_idx] >= 0).all(axis=1)
+        X = X[mask]
+        
+        if self.std_idx:
+            # X[:, self.std_idx] chọn đúng các cột cần Standard Scale
+            X[:, self.std_idx] = self.standardScaler.transform(np.log1p(X[:, self.std_idx]))
+            X[:, self.std_idx] = np.round(X[:, self.std_idx], self.decimal_bin)
+        
+        # Apply MinMax Scaler dựa trên index mask
+        if self.mmax_idx:
+            X[:, self.mmax_idx] = self.minmaxScaler.transform(X[:, self.mmax_idx])
+            X[:, self.mmax_idx] = np.round(X[:, self.mmax_idx], self.decimal_bin)
+
+        # 6. Làm tròn toàn bộ
+        # X = np.round(X, self.decimal_bin)
+        return X, indexdf
+    
+    def loadNumericCols(self):
+        return  [col for col in self.header if col not in ["Flow ID", "Timestamp", "Label"]]      
+    
+    def loadNumericCols_old(self):
+        # Dùng set để tự động loại bỏ trùng lặp, tốc độ cực nhanh
+        cols = set(self.minmax_cols) | set(self.standard_cols) | set(SAMPLE_COLS_TO_REMOVE)
+        cols.add("Src Port")
+        cols.add("Dst Port")
+        return list(cols)
+    
+    
+    def preProcessingData_flush(self, df):
         df = df.replace([np.inf, -np.inf, "inf", "-inf", "Infinity", "-Infinity", r'[N|n][a|A][N|n]', "(empty)"], 0)
         df = df.dropna()
         df = df.drop_duplicates()
@@ -185,26 +241,3 @@ class FlowFlushTransformer:
         
         gc.collect()
         return df, indexdf
-    
-    def loadNumericCols(self):
-        cols = []
-        for col in self.minmax_cols:
-            cols.append(col)
-        for col in self.standard_cols:
-            cols.append(col)
-            
-        for col in SAMPLE_COLS_TO_REMOVE:
-            check = True
-            for tempCol in cols:
-                if tempCol == col:
-                    check= False
-                    break
-            if check == True:
-                cols.append(col)
-                
-        cols.append("Src Port")
-        cols.append("Dst Port")
-        
-        gc.collect()
-        
-        return cols

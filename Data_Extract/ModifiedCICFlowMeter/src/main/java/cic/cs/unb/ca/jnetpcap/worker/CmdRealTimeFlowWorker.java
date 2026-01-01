@@ -53,42 +53,61 @@ public class CmdRealTimeFlowWorker implements Runnable, FlowGenListener {
         StringBuilder errbuf = new StringBuilder();
         pcap = Pcap.openLive(
                 device,
-                64 * 1024,
-                Pcap.MODE_PROMISCUOUS,
-                60_000,
-                errbuf
+                64 * 1024, // snaplen
+                Pcap.MODE_PROMISCUOUS, // promiscous
+                60*1000, // In mimli sec - time out
+                errbuf 
         );
 
         if (pcap == null) {
-            logger.error("open {} fail -> {}", device, errbuf);
+            // logger.error("open {} fail -> {}", device, errbuf);
+            System.out.println("Open "+device +"failed: "+ errbuf.toString());
             return;
         }
 
-        PcapPacketHandler<Void> handler = (packet, user) -> {
+        PcapPacketHandler<String> handler = (packet, user) -> {
 
-            if (!running.get()) {
-                pcap.breakloop();
-                return;
-            }
-
+            
             PcapPacket permanent = new PcapPacket(Type.POINTER);
             packet.transferStateAndDataTo(permanent);
 
-            flowGen.addPacket(
-                    PacketReader.getBasicPacketInfo(permanent, true, false)
+            flowGen.addPacket(PacketReader.getBasicPacketInfo(permanent, true, false)
             );
+
+            if (!running.get()) {
+                pcap.breakloop();
+                // return;
+                System.out.println("[Rt-Worker] Break Pcap Loop");
+            }
         };
 
-        logger.info("Pcap listening on {}", device);
-        pcap.loop(Pcap.LOOP_INFINITE, handler, null);
+        // logger.info("Pcap listening on {}", device);
+        int ret = pcap.loop(Pcap.DISPATCH_BUFFER_FULL, handler, device);
 
-        pcap.close();
-        logger.info("Pcap closed");
+        String str;
+        switch (ret) {
+            case 0:
+                str = "listening: " + device + " finished";
+                break;
+            case -1:
+                str = "listening: " + device + " error";
+                break;
+            case -2:
+                str = "stop listening: " + device;
+                break;
+                default:
+                    str = String.valueOf(ret);
+        }
+        // pcap.close();
+        // logger.info("Pcap closed");
+        System.out.println("[Rt-Worker] Message: "+ str);
     }
 
     @Override
     public void onFlowGenerated(BasicFlow flow) {
         // logger.info("FLOW DONE: {}", flow.getFlowId());
-        RT_cmd.insertRtFlow(flow); // hoặc FlowMgr / CsvWriter
+        // RT_cmd.insertRtFlow(flow); // hoặc FlowMgr / CsvWriter
+        // System.out.println(flow.dumpFlowNoConvert().substring(0, 100));
+        ZmqPubWorker.offer(flow.dumpFlowNoConvert());
     }
 }

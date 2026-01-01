@@ -19,7 +19,7 @@ COLS_TO_DROP = ["Flow ID", "Timestamp"]
 # CLASS 
 # ===================
 class Load_Data:
-    def __init__(self, dir_in, auto_refresh, last_update_time, refresh_interval =60, file = None):
+    def __init__(self, dir_in, file_name, auto_refresh, last_update_time, refresh_interval =60, file = None):
         # TIME SEQ
         self.refresh_interval = refresh_interval
         self.auto_refresh = auto_refresh
@@ -31,7 +31,8 @@ class Load_Data:
         
         # INIT DIR
         self.dir = self.get_full_path(dir_in)
-        self.filePath = Path(self.dir) / f"{datetime.now().date()}.jsonl"
+        # self.filePath = Path(self.dir) / f"{datetime.now().date()}.jsonl"
+        self.filePath = Path(self.dir/file_name)
         if file is not None:
             self.filePath = self.dir / file
         

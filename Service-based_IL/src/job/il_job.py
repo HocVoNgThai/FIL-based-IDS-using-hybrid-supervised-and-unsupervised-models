@@ -9,6 +9,7 @@ import json
 import gc
 
 # Local Import
+
 from src.config.incremental_config import incremental_settings
 from src.Components.Incremental import IncrementalLearning
 
@@ -46,10 +47,13 @@ def save_state(state):
 
 # ===== IL LOGIC =====
 def should_retrain(state, current_update_time: datetime):
-    if len(state["last_retrain"]) < 1:
-        return True
-    last = datetime.strptime(state["last_retrain"][str(state["model_version"])], "%Y-%m-%d %H:%M:%S")
-    return (current_update_time - last).total_seconds() >= MIN_INTERVAL_SEC
+    if incremental_settings.enable_training:
+        
+        if len(state["last_retrain"]) < 1:
+            return True
+        last = datetime.strptime(state["last_retrain"][str(state["model_version"])], "%Y-%m-%d %H:%M:%S")
+        return (current_update_time - last).total_seconds() >= MIN_INTERVAL_SEC
+    return False
 
 def run_incremental_learning(state, last_update_time, current_update_time):
     print(f"{LOG_PREFIX} Running incremental learning...")
@@ -66,6 +70,7 @@ def run_incremental_learning(state, last_update_time, current_update_time):
         time.sleep(2)  # mock
         print(f"{LOG_PREFIX} Incremental learning done.")
         return True
+    
     else:
         print(f"{LOG_PREFIX}  Skip retrain (No data fouded).")
     
@@ -98,7 +103,7 @@ def main():
         # NẾU CÓ RETRAIN - lưu state
         if res:
             state["model_version"] += 1
-            state["last_retrain"][state["model_version"]] = datetime.strptime(current_update_time, "%Y-%m-%d %H:%M:%S")
+            state["last_retrain"][state["model_version"]] = datetime.strftime(current_update_time, "%Y-%m-%d %H:%M:%S")
             save_state(state)
             print(f"{LOG_PREFIX} Model updated to v{state['model_version']}")
 

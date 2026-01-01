@@ -9,6 +9,7 @@ import gc
 import pandas as pd
 import numpy as np
 from pathlib import Path
+
 # from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from scipy.spatial.distance import cdist
@@ -21,18 +22,20 @@ from src.Components.Manager import Manager
 from src.Components.Models import AETrainer, IncrementalOCSVM, OpenSetXGBoost
 from src.Components.Detector import SequentialHybridPipeline
 from src.Utils.utils import *
-
+from src.Utils.func_convert import astype_il
 class IncrementalLearning():
     def __init__(self, last_update_time: datetime, current_update_time: datetime, il_data_dir :Path, il_logs_dir:Path, current_index) -> None:
-        self.il_data_dir = il_data_dir
-        self.il_logs_dir = il_logs_dir
-        
         # self.last_update_time = datetime.strptime(last_update_time, "%Y-%m-%d %H-%M-%S")
         # self.current_update_time = datetime.strptime(current_update_time, "%Y-%m-%d %H-%M-%S")
         self.last_update_time = last_update_time
         self.current_update_time = current_update_time
         self.current_index = current_index
         
+        # DIR
+        self.il_data_dir = il_data_dir
+        self.il_logs_dir = il_logs_dir / f"{datetime.strftime(self.current_update_time, '%Y-%m-%d')}_{self.current_index}"
+        self.il_logs_dir.mkdir(parents=True, exist_ok=True)
+                
         # DATA
         self.df = self.load_current_train_data()
         self.should_train= True
@@ -40,11 +43,19 @@ class IncrementalLearning():
             self.should_train = False
             return
         
+        # BỎ NHỮNG MẪU CÒN XÓT CHƯA XỬ LÝ ĐI
+        labels_to_remove = ["NeedManualLabel", "Unknown"]
+        self.df = self.df[~self.df['Label'].isin(labels_to_remove)]
+        # print(type(self.df))
         self.preDf = self.load_last_train_data()
+        print("[IL] \n", self.preDf["Label"].value_counts())
         gc.collect()
         
         self.dict_current_df , self.sample_per_label = self.calculate_samples()
+        
+        # Lấy mẫu
         self.df = self.replay_buffer()
+        print(self.df["Label"].value_counts())
 
     def get_timestr(self, name):
         
@@ -59,6 +70,7 @@ class IncrementalLearning():
     
     def load_current_train_data(self):
         dfs = []
+        print("[IL] Các file được tham gia: ")
         for file in self.il_data_dir.glob("*.parquet"):
             
             if file.name.replace(".parquet","") in ["session0", "fixed_budget", "fixed_budget_duphong"]:
@@ -70,7 +82,9 @@ class IncrementalLearning():
                 print("[INCREMENTAL] Error while loaddata: ", e)
                 continue
             
+            # print(self.last_update_time, "" , timeobj, "", self.current_update_time)
             if self.last_update_time < timeobj and timeobj < self.current_update_time:
+                print(" - ", file.name)
                 # print(timeobj)
                 # print(True)
                 dfs.append(pd.read_parquet(file))
@@ -84,6 +98,9 @@ class IncrementalLearning():
     def load_last_train_data(self):
         return pd.read_parquet(incremental_settings.IL_DATA_DIR/"fixed_budget.parquet")
     
+    def save_budget(self):
+        return
+    
     def calculate_samples(self):
         # num_labels = len(incremental_settings.IL_LABEL())
         # target_per_label = incremental_settings.IL_FIXED_MEM_BUDGET // num_labels
@@ -91,7 +108,7 @@ class IncrementalLearning():
         dict_df = self.df["Label"].value_counts()
         dict_predf = incremental_settings.IL_LABEL()
         
-        dict_newdf = dict_predf
+        dict_newdf = dict_predf.copy()
         for key, val in dict_df.items():
             if key not in dict_predf.keys():
                 dict_newdf[key]=val
@@ -101,38 +118,42 @@ class IncrementalLearning():
         num_labels = len(dict_newdf)
         target_per_label = incremental_settings.IL_FIXED_MEM_BUDGET //num_labels
         
-        # delta_samples = 0
-        # count_delta = 0
-        # for key, val in dict_predf.items():
-        #     if val < target_per_label:
-        #         delta_samples += target_per_label - val
-        #         count_delta +=1
         
         for key, val in dict_predf.items():
             if dict_newdf[key] >= target_per_label:
                 dict_newdf[key] = target_per_label
-         
+                
+        for key, val in dict_df.items():
+            if key not in dict_predf.keys():
+                if dict_newdf[key] > round(1.2*val):
+                    dict_newdf[key] = round(1.2*val)
+        
+        print(f"[IL] Current (old & new) Labels: {dict_newdf}")
+        
         del dict_df, dict_predf
         gc.collect()
         
         return dict_newdf, target_per_label
         
     def replay_buffer(self):
+        # NÊN LƯU LẠI VÀO BUDGET CÁI NÀY ĐỂ DỄ DÙNG
         self.df = pd.concat([self.df,self.preDf])
         
         feature_cols = [col for col in self.df.columns if col not in ["Flow ID", "Timestamp", "Label", "Binary Label"]]
         
-        size_herding =  int(self.sample_per_label* 0.5)
-        size_random = self.sample_per_label - size_herding
+        size_herding =  int(self.sample_per_label* 0.2)
+        # size_random = self.sample_per_label - size_herding
         
         chunks = []
         
         for key, val in self.dict_current_df.items():
             samples_key = self.df[self.df["Label"]==key]
+            
+            # Nếu mẫu ít hơn sample/label thì append luôn, k cần lựa
             if len(samples_key) < self.sample_per_label:
                 chunks.append(samples_key)
                 continue
-
+            
             selected_indices = set()
 
             # HERDING LẤY NHỮNG MẪU GẦN MEAN
@@ -158,8 +179,13 @@ class IncrementalLearning():
                 
             chunks.append(samples_key.loc[list(selected_indices)])
             gc.collect()
-            
-        return pd.concat(chunks).sample(frac=1).reset_index(drop=True)
+        
+        
+        combined_df = pd.concat(chunks, ignore_index=True)
+        combined_df = combined_df.sample(frac=1, random_state=42).reset_index(drop=True)
+        
+        return combined_df
+        # return pd.concat(chunks).sample(frac=1).reset_index(drop=True)
     
     def split_train_test(self):
         label_mapping = {}
@@ -167,10 +193,24 @@ class IncrementalLearning():
             label_mapping[key]= index
             
         print("[src.Components.Incremental] Current Label dict: ",label_mapping)
-        self.df["Label"]= self.df["Label"].map(label_mapping).astype(int)
+        self.df["Label"]= self.df["Label"].map(label_mapping).astype(np.int8)
+        
         
         drop_cols = [col for col in self.df.columns if col in ["Flow ID", "Timestamp", "Label", "Binary Label"]]
-        X= self.df.drop(columns=drop_cols, axis =1) # "Flow ID", "Timestamp",
+        X= self.df.drop(columns=drop_cols, axis = 1)
+        
+        # X = astype_il(X)
+        scaler  = StandardScaler()
+        scaler = joblib.load("src/pkl/scaler.joblib")
+        
+        # X = .astype(np.float32)
+        
+        X = pd.DataFrame(
+            scaler.transform(X.astype(np.float64)),
+            columns=X.columns,
+            index=X.index
+        )
+        
         y = self.df["Label"]
         
         del drop_cols
@@ -186,22 +226,24 @@ class IncrementalLearning():
         ae = AETrainer(81, 32); ocsvm = IncrementalOCSVM(nu=0.15); xgb = OpenSetXGBoost(0.75)
         mgr = Manager(settings.MODEL_DIR, incremental_settings.IL_MODEL_DIR, self.current_update_time)
         mgr.load_models([xgb, ocsvm, ae])
+        print(f"[IL] Model State Loaded: AE: {ae.loaded}, OCSVM: {ocsvm.loaded}, XGB: {xgb.loaded}")
         pipeline = SequentialHybridPipeline(xgb= xgb, ocsvm=ocsvm , ae= ae)
         
         # ==========================
         # PREIL
         # ==========================
         results = {'metrics': {}, 'unknown_stats': {}}
-        print("\n--- Phase 1: Detection (Pre-IL) ---")  
+        print("\n--- Phase 1: Detection (Pre-IL) ---")
         preds, details = pipeline.predict(trainX, return_details=True)
         map_unknown = [3]
-        evaluate_final_pipeline(trainy, preds, "Scenario1_PreIL", self.il_logs_dir, map_new_to_unknown=map_unknown)
-        results['unknown_stats']['Pre'] = calculate_unknown_metrics(trainy, preds, unknown_label=3, save_dir=self.il_logs_dir, session_name="Scenario1_PreIL")
-        
+        # print(f"[IL] UNKNOWN LABELS: {map_unknown}" )
+        evaluate_final_pipeline(trainy, preds, f"Scenario_PreIL", self.il_logs_dir, map_new_to_unknown=map_unknown)
+        results['unknown_stats']['Pre'] = calculate_unknown_metrics(trainy, preds, unknown_label=3, save_dir=self.il_logs_dir, session_name= f"Scenario_PreIL")
+
         xgb_pre, xgb_conf = pipeline.xgb.predict_with_confidence(trainX)
-        evaluate_supervised_with_unknown(trainy, xgb_pre, xgb_conf, atk_thres=0.7, ben_thres=0.7, session_name="Scenario1_PreIL", save_dir=self.il_logs_dir, target_unknown=3)
-        evaluate_gray_zone(trainy, xgb_pre, xgb_conf, details['ae_pred'], details['ocsvm_pred'], 0.7, 0.9, "Scenario1_PreIL", self.il_logs_dir)
-        evaluate_unsupervised_detailed(trainy, details['ae_pred'], details['ocsvm_pred'], "Scenario1_PreIL", self.il_logs_dir, return_f1=True)
+        evaluate_supervised_with_unknown(trainy, xgb_pre, xgb_conf, atk_thres=0.7, ben_thres=0.7, session_name="", save_dir=self.il_logs_dir, target_unknown=3)
+        evaluate_gray_zone(trainy, xgb_pre, xgb_conf, details['ae_pred'], details['ocsvm_pred'], 0.7, 0.9, f"Scenario_PreIL ", self.il_logs_dir)
+        evaluate_unsupervised_detailed(trainy, details['ae_pred'], details['ocsvm_pred'],  f"Scenario_PreIL ", self.il_logs_dir, return_f1=True)
         
         # ===================================
         # INCREMENTAL LEARNING
@@ -214,12 +256,12 @@ class IncrementalLearning():
         # ==================================
         print("\n--- Phase 3: Post Incremental Learning")
         final_preds, details_test = pipeline.predict(testX, return_details=True)
-        results['metrics']['Pipeline'] = evaluate_final_pipeline(testy, final_preds, "Scenario1_PostIL", self.il_logs_dir)
+        results['metrics']['Pipeline'] = evaluate_final_pipeline(testy, final_preds, "Scenario_PostIL", self.il_logs_dir)
         
         xgb_post, _ = pipeline.xgb.predict_with_confidence(testX)
-        results['metrics']['XGBoost'] = evaluate_supervised_model(testy, xgb_post, "Scenario1_PostIL", self.il_logs_dir, "XGBoost")
+        results['metrics']['XGBoost'] = evaluate_supervised_model(testy, xgb_post, "Scenario_PostIL", self.il_logs_dir, "XGBoost")
         
-        ae_rep, oc_rep = evaluate_unsupervised_detailed(testy, details_test['ae_pred'], details_test['ocsvm_pred'], "Scenario1_PostIL", self.il_logs_dir)
+        ae_rep, oc_rep = evaluate_unsupervised_detailed(testy, details_test['ae_pred'], details_test['ocsvm_pred'], "Scenario_PostIL", self.il_logs_dir)
         results['metrics']['AE'] = ae_rep
         results['metrics']['OCSVM'] = oc_rep
         

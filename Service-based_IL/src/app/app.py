@@ -28,6 +28,8 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+st.markdown('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">', unsafe_allow_html=True)
+
 # ===== SESSION STATE SIDEBAR =====
 if 'sidebar_expanded' not in st.session_state:
     st.session_state.sidebar_expanded = True
@@ -36,13 +38,15 @@ def toggle_sidebar():
     st.session_state.sidebar_expanded = not st.session_state.sidebar_expanded
     st.rerun()
     
-sidebar, mainview = st.columns([1, 12], vertical_alignment="top") if st.session_state.sidebar_expanded == True else st.columns([1, 15], vertical_alignment="top") 
+sidebar, mainview = st.columns([1, 10], vertical_alignment="top") if st.session_state.sidebar_expanded == True else st.columns([1, 15], vertical_alignment="top") 
 selected_page = render_sidebar(sidebar)
 
 # ===== MAIN VIEW =====
 page_mapping = {
         "Alerts": "Alerts",
         "Data" : "Data",
+        "IL Results": "Results_IL",
+        "Resource Monitor": "Res_Manager",
         "IL Config" : "IncrementalLearning",
         "Settings" : "Settings"
     }

@@ -1,117 +1,143 @@
 # pages/Data.py
-import os, sys
-import json
+import time
+import gc
 from pathlib import Path
+from datetime import datetime
+import shutil
+
+
+
 import pandas as pd
 import streamlit as st
 
-
-#
-import time
-from datetime import datetime
-import gc
-
-#
 from src.config.settings import settings
-from src.app.core.Data import Data_Labeling
+from src.config.incremental_config import incremental_settings
 from src.app.config.func_convert import round_decimal
-from src.app.config.config import COLS_TO_DROP, MINMAX_COLS, STANDARD_COLS, DECIMAL_BIN
+from src.app.config.config import (
+    COLS_TO_DROP,
+    MINMAX_COLS,
+    STANDARD_COLS,
+    DECIMAL_BIN,
+)
 
-# CONFIG ST
+# =========================================================
+# CONFIG
+# =========================================================
 st.set_page_config(layout="wide")
 
-# ===== CONST =====
-# HOME = Path.cwd()
-LABEL_OPTIONS = ["Benign", "Unknown", "DDoS", "DoS", "Reconnaisance", "MITM_ArpSpoofing", "DNS_Spoofing", "NeedManualLabel"]
+LABEL_OPTIONS = [
+    "Benign", "Unknown", "DDoS", "DoS", "Reconnaisance",
+    "MITM_ArpSpoofing", "DNS_Spoofing", "NeedManualLabel"
+]
 
+# =========================================================
+# CACHE LOADERS
+# =========================================================
+@st.cache_data(show_spinner="📦 Loading dataset...")
+def load_dataframe(path: str, mtime: float) -> pd.DataFrame:
+    p = Path(path)
+    if p.suffix == ".parquet":
+        return pd.read_parquet(p)
+    elif p.suffix == ".csv":
+        return pd.read_csv(p)
+    else:
+        raise ValueError("Unsupported file type")
+
+
+@st.cache_data(show_spinner="📜 Loading JSONL alerts...")
+def load_jsonl(path: str, mtime: float) -> pd.DataFrame:
+    return pd.read_json(path, lines=True)
+
+
+def save_dataframe(df: pd.DataFrame, path: Path) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(path, index=False)
+    return path.name
+
+
+# =========================================================
+# SESSION INIT
+# =========================================================
+def init_session():
+    today = datetime.now().date()
+
+    st.markdown('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">', unsafe_allow_html=True)
+    st.session_state.setdefault(
+        "current_file",
+        str(settings.DATA_DIR / f"{today}" / "batch_0.parquet")
+    )
+    st.session_state.setdefault(
+        "jsonl_file",
+        str(settings.ALERTS_DIR / f"{today}.jsonl")
+    )
+
+    st.session_state.setdefault("df", None)
+    st.session_state.setdefault("alerts_df_view", None)
+    st.session_state.setdefault("overwrite_label", True)
+
+
+# =========================================================
+# MAIN
+# =========================================================
 def main():
-    st.title("🧠 Data Management & Labeling")
-    # ===== SESSION STATE =====
-    if "current_file" not in st.session_state:
-        st.session_state.current_file = Path(settings.DATA_DIR / f"{datetime.now().date()}" / "batch_0.parquet")
+    init_session()
 
-    if "jsonl_file" not in st.session_state:
-        st.session_state.jsonl_file = Path(settings.ALERTS_DIR / f"{datetime.now().date()}.jsonl")
-        
-    if "dataLabeling" not in st.session_state:
-        st.session_state.dataLabeling = Data_Labeling(st.session_state.current_file)
+    st.markdown('## <i class="bi bi-clipboard-data"></i> Data Management & Labeling', unsafe_allow_html=True)
 
-    if "df" not in st.session_state:
-        st.session_state.df = None
-        
-    if "alerts_df_view" not in st.session_state:
-        st.session_state.alerts_df_view = None
+    # =====================================================
+    # SECTION A — DATASET
+    # =====================================================
+    st.markdown(
+        f'### <i class="bi bi-graph-up-arrow"></i> Preprocessed Dataset | File: {Path(st.session_state.current_file).name}',
+        unsafe_allow_html=True# Dir:{Path(settings.DATA_DIR).parent.resolve()}
+    )
 
-    if "selected_flow_id" not in st.session_state:
-        st.session_state.selected_flow_id = None
-        
-    if "overwrite_label" not in st.session_state:
-        st.session_state.overwrite_label = True
-    # ---- LLOAD DATA----
-    if st.session_state.dataLabeling:
-        dataLabeling = st.session_state.dataLabeling
-
-    # Đảm bảo không load lại nhiều lần
-    if st.session_state.df is None and Path.exists(st.session_state.current_file):  
-        st.session_state.df = dataLabeling.load_data()
-        st.success("Data Loaded!")
-
-
-    # =========================================================
-    # SECTION A — ALERT DATA (PARQUET)
-    # =========================================================
-    st.subheader(f"📦 Preprocessed Dataset (Parquet, Csv) | File hiện tại: {st.session_state.current_file.name}")
     colA1, colA2, colA3 = st.columns([4, 1, 1])
 
     with colA1:
-        # choosed_file = st.file_uploader(
-        #     "📂 Chọn file alerts (.parquet)",
-        #     type=["parquet"],
-        #     key="alerts_uploader"
-        # )
-        choosed_file = st.text_input(
-            "📂 Nhập đường dẫn file Parquet/Csv",
-            value=st.session_state.current_file,
-            placeholder="Ví dụ: C:/data/alerts.parquet hoặc /home/user/app_logs/batch_1.parquet",
-            key="file_path_input"
+        file_path = st.text_input(
+            "| Dataset path (Parquet / CSV)", # "📂 Dataset path (Parquet / CSV)",
+            value=st.session_state.current_file
         )
-        # choosed_file = choosed_file.replace('\\', '/')
-        # st.text(choosed_file)
-        
+
     with colA2:
-        load_button = st.button("🔄 Load File", use_container_width=True, type="primary")
-
-        # --- Chỉ load khi người dùng bấm nút Load ---
-        if load_button:
-            if not choosed_file:
-                st.error("Vui lòng nhập đường dẫn file!")
-                        
-            elif choosed_file is not None and dataLabeling.check_dir(Path(choosed_file)):
-                if Path(choosed_file) != st.session_state.current_file:
-                    st.session_state.current_file = Path(choosed_file)
-                    st.session_state.dataLabeling = Data_Labeling(st.session_state.current_file)
-                    st.success(f"Đã chọn file: {st.session_state.current_file.name}")
-                else:
-                    st.success("File đã load từ lần nhấp gần nhất!")
+        if st.button("Load File", type="primary", use_container_width=True):
+            path = Path(file_path)
+            if not path.exists():
+                st.error("Không tìm thấy file!")
+            else:
+                st.session_state.current_file = str(path)
+                try:
+                    st.session_state.df = load_dataframe(
+                        str(path), path.stat().st_mtime
+                    )
+                    st.success(f"Loaded: {path.name}")
+                except Exception as e:
+                    st.error(f"[ST] Error {e}")
+                    print(e)
                 
-            time.sleep(0.2)
-            st.rerun()
-        
-    with colA3:
-        save_mode = st.radio(
-            "Chế độ lưu",
-            ["Overwrite", "Save As"],
-            horizontal=True
-        )
+                time.sleep(0.2)
+                st.rerun()
 
+    # with colA3:
+    #     save_mode = st.radio("Save Mode", ["Overwrite", "Save As"], horizontal=True)
 
-    # ---- SHOW & EDIT ----
+    # =====================================================
+    # SHOW + EDIT
+    # =====================================================
     if st.session_state.df is not None:
         df = st.session_state.df
-        # ROUND PHẦN THẬP PHÂN
-        df = round_decimal(df, min_max_cols= MINMAX_COLS, standard_cols= STANDARD_COLS, minmax_decimal_bin=8, standard_decimal_bin=DECIMAL_BIN)
-        
-        st.subheader("📝 Chỉnh sửa Label")
+
+        df = round_decimal(
+            df,
+            min_max_cols=MINMAX_COLS,
+            standard_cols=STANDARD_COLS,
+            minmax_decimal_bin=8,
+            standard_decimal_bin=DECIMAL_BIN
+        )
+
+        # st.subheader("📝 Edit Labels")
+        st.markdown('### <i class="bi bi-pencil-square"></i> Edit Labels', unsafe_allow_html= True)
         df = st.data_editor(
             df,
             use_container_width=True,
@@ -121,162 +147,208 @@ def main():
                 "Label": st.column_config.SelectboxColumn(
                     "Label",
                     options=LABEL_OPTIONS,
-                    default="NeedManualLabel",
                     required=True
                 )
             }
         )
 
         st.session_state.df = df
+        with st.container(border= True):
+            # ---------------- Mapping ----------------
+            with st.expander("Batch Label Mapping"):
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    from_label = st.selectbox("From", LABEL_OPTIONS)
+                with c2:
+                    to_label = st.selectbox("To", LABEL_OPTIONS)
+                with c3:
+                    if st.button("Apply Mapping"):
+                        mask = df["Label"] == from_label
+                        df.loc[mask, "Label"] = to_label
+                        st.session_state.df = df
+                        st.success(f"Mapped {mask.sum()} samples")
+                        time.sleep(0.2)
+                        st.rerun()
 
-        # ---- LABEL MAPPING ----
-        with st.expander("🔁 Mapping Label hàng loạt"):
-            colM1, colM2, colM3 = st.columns(3)
-            with colM1:
-                from_label = st.selectbox("From", LABEL_OPTIONS, key="map_from")
-            with colM2:
-                to_label = st.selectbox("To", LABEL_OPTIONS, key="map_to")
-            with colM3:
-                if st.button("Apply Mapping"):
-                    mask = df["Label"] == from_label
-                    df.loc[mask, "Label"] = to_label
-                    st.success(f"Mapped {mask.sum()} samples")
+            # ---------------- Save ----------------
+            st.markdown("### <i class='bi bi-floppy'></i> Save", unsafe_allow_html= True)
 
-        # ---- SAVE ----
-        # ---- Save Controls ----
-        st.markdown("### 💾 Save")
+            c1, c2 = st.columns(2)
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("💾 Save (Overwrite)"):
-                fname = dataLabeling.save_data(df)
-                if fname is not None:
-                    st.success(f"✔ Saved (overwrite) to {fname}")
-
-        with col2:
-            fname = st.text_input(
-                "Save As (filename.parquet)",
-                value=f"labeled_.parquet?"
-            )
-
-            if st.button("💾 Save As"):
-                fname = dataLabeling.save_data(df, fname)
-                if fname is not None:
+            with c1:
+                if st.button(" Save (Overwrite)"):
+                    fname = save_dataframe(
+                        df, Path(st.session_state.current_file)
+                    )
                     st.success(f"Saved → {fname}")
 
-    # =========================================================
-    # SECTION B — RAW FLOW DATA (JSONL)
-    # =========================================================
-    st.markdown("---")
-    st.subheader(f"📜 B. Raw Flow Logs (JSONL) | File hiện tại: {st.session_state.jsonl_file.name}")
-
-    if st.session_state.alerts_df_view is None and Path.exists(st.session_state.jsonl_file):
-        alerts_df = pd.read_json(st.session_state.jsonl_file, lines= True, nrows=None)
+            with c2:
+                curr_file_time = datetime.fromtimestamp(Path(st.session_state.current_file).stat().st_mtime)
+                curr_file_time = curr_file_time.strftime("%Y-%m-%d %H-%M-%S")
+                save_as = st.text_input(
+                    "Save As _ to train_data _ For IL",
+                    value= incremental_settings.IL_DATA_DIR/ f"{curr_file_time}.parquet"
+                )
+                if st.button("Save As"):
+                    out = Path(settings.DATA_DIR) / save_as
+                    fname = save_dataframe(df, out)
+                    st.success(f"Saved → {fname}")
+    
+    # with st.container(border = True):
+    #     st.markdown(f"### <i class='bi bi-copy'></i> Copy file từ {str(settings.DATA_DIR / str(datetime.now().date()))}/ sang {incremental_settings.IL_DATA_DIR}/",
+    #                 unsafe_allow_html=True)
+    #     selected_files = st.multiselect("Chọn các tập tin để copy số lượng lớn:", list(Path(settings.DATA_DIR / str(datetime.now().date())).glob("*.parquet")))
+        
+    #     if st.button("Execute"):
+    #         for f in selected_files:
+    #             if not f.exists():
+    #                 continue
+    #             ftime = datetime.fromtimestamp(f.stat().st_mtime)
+    #             ftime = ftime.strftime("%Y-%m-%d %H-%M-%S")
                 
-        # VIEWED
-        df_flow_ids = set(st.session_state.df["Flow ID"])
-        st.session_state.alerts_df_view = alerts_df[alerts_df["Flow ID"].isin(df_flow_ids)]
-        st.success("Alerts Loaded!")
+    #             shutil.copy(f.resolve(), incremental_settings.IL_DATA_DIR/ f"{ftime}.parquet")
+            
+    #         st.success("Copy Success!")
+    
+    with st.container(border=True):
+        st.markdown(f"### <i class='bi bi-copy'></i> Copy file dữ liệu lớn", unsafe_allow_html=True)
         
-        del alerts_df
-        gc.collect()
+        # 1. Lấy danh sách các thư mục con trong DATA_DIR (thường là các thư mục ngày tháng)
+        base_path = Path(settings.DATA_DIR)
+        if base_path.exists():
+            sub_dirs = [d.name for d in base_path.iterdir() if d.is_dir()]
+            sub_dirs.sort(reverse=True) # Sắp xếp mới nhất lên đầu
+        else:
+            sub_dirs = []
+
+        # 2. Cho phép người dùng chọn thư mục nguồn
+        selected_dir_name = st.selectbox("Chọn thư mục nguồn (Ngày):", sub_dirs)
         
-    colB1, colB2, colB3= st.columns([4, 1, 1]) 
+        if selected_dir_name:
+            source_path = base_path / selected_dir_name
+            st.info(f"Đang quét file tại: `{source_path}`")
+            
+            # 3. Lấy danh sách file từ thư mục đã chọn
+            files_in_dir = list(source_path.glob("*.parquet"))
+            
+            # Hiển thị tên file cho gọn trong multiselect
+            file_options = {f.name: f for f in files_in_dir}
+            
+            selected_file_names = st.multiselect(
+                "Chọn các tập tin để copy:", 
+                options=list(file_options.keys())
+            )
+
+            if st.button("Execute Copy"):
+                if not selected_file_names:
+                    st.warning("Vui lòng chọn ít nhất một file.")
+                else:
+                    progress_bar = st.progress(0)
+                    for idx, name in enumerate(selected_file_names):
+                        f = file_options[name]
+                        if not f.exists():
+                            continue
+                            
+                        # Lấy thời gian mtime của file để đổi tên tránh trùng
+                        ftime = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H-%M-%S")
+                        
+                        # Đích đến: Giữ nguyên tên gốc hoặc dùng ftime tùy nhu cầu của bạn
+                        # Ở đây tôi dùng ftime như code cũ của bạn
+                        target_name = f"{ftime}_{f.name}" 
+                        shutil.copy(f.resolve(), Path(incremental_settings.IL_DATA_DIR) / target_name)
+                        
+                        # Cập nhật progress bar
+                        progress_bar.progress((idx + 1) / len(selected_file_names))
+                    
+                    st.success(f"Đã copy thành công {len(selected_file_names)} file vào thư mục Incremental!")
+                    
+    # =====================================================
+    # SECTION B — JSONL ALERTS
+    # =====================================================
+    st.markdown("---")
+    st.markdown(
+        f"### <i class='bi bi-list-ul'></i> Raw Flow Alerts | File: {Path(st.session_state.jsonl_file).name}",
+        unsafe_allow_html=True
+    )
+
+    colB1, colB2, colB3 = st.columns([4, 1, 1])
 
     with colB1:
-        
-        jsonl_file = st.text_input(
-            "📂 Nhập đường dẫn file Parquet/Csv",
-            value=st.session_state.jsonl_file,  
-            placeholder="Ví dụ: C:/data/alerts.parquet hoặc /home/user/app_logs/batch_1.parquet",
-            key="json_file"
+        json_path = st.text_input(
+            "| JSONL path",
+            value=st.session_state.jsonl_file
         )
 
-    
     with colB2:
-        load_jsonl_button = st.button("🔄 Load File", use_container_width=True, type="primary", key="jsonloadButton")
+        if st.button("Load Alerts", type="primary", use_container_width=True):
+            path = Path(json_path)
+            if not path.exists():
+                st.error("Không tìm thấy JSONL file!")
+            else:
+                st.session_state.jsonl_file = str(path)
+                alerts_df = load_jsonl(
+                    str(path), path.stat().st_mtime
+                )
 
-        # --- Chỉ load khi người dùng bấm nút Load ---
-        if load_jsonl_button:
-            if not jsonl_file:
-                st.error("Vui lòng nhập đường dẫn file!")
-                        
-            elif jsonl_file is not None and Path.exists(Path(jsonl_file)):
-                # if Path(jsonl_file) != st.session_state.jsonl_file:
-                    
-                st.session_state.jsonl_file = Path(jsonl_file)
-                alerts_df = pd.read_json(st.session_state.jsonl_file, lines= True, nrows=None)
-                
-                # VIEWED
-                df_flow_ids = set(st.session_state.df["Flow ID"])
-                st.session_state.alerts_df_view = alerts_df[alerts_df["Flow ID"].isin(df_flow_ids)]
-                
-                st.success(f"Đã chọn file: {st.session_state.current_file.name}")
-                del df_flow_ids, alerts_df
+                flow_ids = set(st.session_state.df["Flow ID"])
+                st.session_state.alerts_df_view = alerts_df[
+                    alerts_df["Flow ID"].isin(flow_ids)
+                ]
+
+                del alerts_df, flow_ids
                 gc.collect()
-                
-            else:
-                st.error("Không thể tìm thấy file jsonl!")
-            time.sleep(0.2)
-            st.rerun()
-    
-    # Không thay đổi thì cứu thế mà hiển thị/sử dụng
-    alerts_df_view = st.session_state.alerts_df_view
-    
+
+                st.success("Alerts loaded")
+                time.sleep(0.2)
+                st.rerun()
+
     with colB3:
-        if st.button("🚀 Apply Mapping từ Alerts", use_container_width= True, type = "primary", key="LabelMapping"):
-            if alerts_df_view is None:
-                st.error("Không flow nào trùng id hoặc chưa load được!")
-            elif "Flow ID" not in df.columns or "Flow ID" not in alerts_df_view.columns:
-                st.error("Không tìm thấy cột Flow ID")
-            elif "Label" not in alerts_df_view.columns:
-                st.error("alerts_df không có cột Label")
+        overwrite = st.checkbox(
+            "Overwrite existing labels",
+            value=st.session_state.overwrite_label
+        )
+        st.session_state.overwrite_label = overwrite
+
+        if st.button("Apply Mapping", type="primary", use_container_width=True):
+            df = st.session_state.df
+            alerts = st.session_state.alerts_df_view
+
+            if alerts is None:
+                st.error("No alerts loaded!")
             else:
-                # --- Build map ---
-                flowid_to_label = (
-                    alerts_df_view
+                mapping = (
+                    alerts
                     .dropna(subset=["Flow ID", "Label"])
                     .drop_duplicates("Flow ID")
                     .set_index("Flow ID")["Label"]
                     .to_dict()
                 )
 
-                # --- Mask ---
-                if st.session_state.overwrite_label:
-                    mask = df["Flow ID"].isin(flowid_to_label)
+                if overwrite:
+                    mask = df["Flow ID"].isin(mapping)
                 else:
                     mask = (
-                        df["Flow ID"].isin(flowid_to_label)
+                        df["Flow ID"].isin(mapping)
                         & df["Label"].isin(["NeedManualLabel", "Unknown"])
                     )
 
-                # --- Apply ---
-                before = mask.sum()
-                df.loc[mask, "Label"] = df.loc[mask, "Flow ID"].map(flowid_to_label)
-
+                count = mask.sum()
+                df.loc[mask, "Label"] = df.loc[mask, "Flow ID"].map(mapping)
                 st.session_state.df = df
-                st.success(f"✔ Mapped {before} flows từ alerts")
-                
-                time.sleep(1)
-                st.rerun()
-                
-                
-        overwrite_label = st.checkbox(
-            "Ghi đè label đã gán thủ công",
-            value=True
-        )
-        
-        st.session_state.overwrite_label = overwrite_label
 
-    if alerts_df_view is not None:
+                st.success(f"✔ Mapped {count} flows")
+                time.sleep(0.5)
+                st.rerun()
+
+    if st.session_state.alerts_df_view is not None:
         st.caption(
-            f"Khớp Flow ID với df: {len(alerts_df_view)} |"
-            # f"JSONL gốc: {len(alerts_df)}"
+            f"Matched Flow IDs: {len(st.session_state.alerts_df_view)}"
         )
-    if alerts_df_view is not None:
         st.dataframe(
-            alerts_df_view,
+            st.session_state.alerts_df_view,
             use_container_width=True,
             hide_index=True
         )
+# # =========================================================
+# if __name__ == "__main__":
+#     main()

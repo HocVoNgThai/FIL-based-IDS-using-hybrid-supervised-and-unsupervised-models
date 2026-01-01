@@ -53,6 +53,7 @@ class AETrainer(Model):
         self.known_threshold = None
         
         self.model_name = "ae.pt"
+        self.loaded = False
 
     def train_on_known_data(self, X_benign, epochs=200, batch_size=512, verbose=True):
         if verbose: print(f"Training Deep AE on {len(X_benign)} samples...")
@@ -78,7 +79,7 @@ class AETrainer(Model):
         with torch.no_grad():
             if isinstance(data, np.ndarray):
                 tensor = torch.FloatTensor(data).to(self.device)
-            elif isinstance(data, pd.Dataframe):
+            elif isinstance(data, pd.DataFrame):
                 tensor = torch.FloatTensor(data.values).to(self.device)  # .values → numpy array
             errors = []
             for i in range(0, len(tensor), 2048):
@@ -91,7 +92,7 @@ class AETrainer(Model):
         return self.get_reconstruction_errors(X) <= self.known_threshold
 
     def save_model(self, p): os.makedirs(os.path.dirname(p), exist_ok=True); torch.save({'st': self.model.state_dict(), 'th': self.known_threshold}, p)
-    def load_model(self, p): ckpt = torch.load(p, map_location=self.device, weights_only=False); self.model.load_state_dict(ckpt['st']); self.known_threshold = ckpt['th']
+    def load_model(self, p): ckpt = torch.load(p, map_location=self.device, weights_only=False); self.model.load_state_dict(ckpt['st']); self.known_threshold = ckpt['th'] ; self.loaded = True
 
 # ==================== 2. INCREMENTAL OCSVM (Requested Version) ====================
 class IncrementalOCSVM(Model):
@@ -99,24 +100,25 @@ class IncrementalOCSVM(Model):
         # Nystroem 800 components như yêu cầu
         self.feature_map = Nystroem(gamma=0.1, random_state=random_state, n_components=1000)
         self.model = SGDOneClassSVM(nu=nu, random_state=random_state, shuffle=True)
-        self.is_fitted = False
+        # self.is_fitted = False
         
         self.model_name = "ocsvm.pkl"
+        self.loaded = False
 
     def train(self, X): 
         self.model.fit(self.feature_map.fit_transform(X))
-        self.is_fitted = True
+        # self.is_fitted = True
 
     def partial_fit(self, X): 
-        if self.is_fitted:
-            self.model.partial_fit(self.feature_map.transform(X))
-        else:
-            self.train(X)
+        # if self.is_fitted:
+        self.model.partial_fit(self.feature_map.transform(X.astype(np.float32)))
+        # else:
+            # self.train(X)
 
     def decision_function(self, X): return self.model.decision_function(self.feature_map.transform(X))
     
     def save_model(self, p): os.makedirs(os.path.dirname(p), exist_ok=True); joblib.dump({'model': self.model, 'map': self.feature_map, 'fitted': self.is_fitted}, p)
-    def load_model(self, p): d = joblib.load(p); self.model, self.feature_map, self.is_fitted = d['model'], d['map'], d['fitted']
+    def load_model(self, p): d = joblib.load(p); self.model, self.feature_map, self.is_fitted = d['model'], d['map'], d['fitted']; self.loaded= True
 
 # ==================== 3. XGBOOST (Giữ nguyên để Pipeline hoạt động) ====================
 class OpenSetXGBoost(Model):
@@ -128,6 +130,7 @@ class OpenSetXGBoost(Model):
         self.max_classes = max_classes_buffer
         
         self.model_name = "xgb.pkl"
+        self.loaded = False
         
     def _update_encoder(self, y):
         cur = set(self.label_encoder.keys()); new = set(np.unique(y)) - cur
@@ -167,4 +170,4 @@ class OpenSetXGBoost(Model):
         self.train(np.vstack([X_old, X_new]), np.hstack([y_old, y_new]), is_incremental=True)
 
     def save_model(self, p): os.makedirs(os.path.dirname(p), exist_ok=True); joblib.dump({'m': self.model, 'le': self.label_encoder, 're': self.reverse_encoder, 'c': self.confidence_threshold}, p)
-    def load_model(self, p): d=joblib.load(p); self.model, self.label_encoder, self.reverse_encoder, self.confidence_threshold = d['m'], d['le'], d['re'], d['c']
+    def load_model(self, p): d=joblib.load(p); self.model, self.label_encoder, self.reverse_encoder, self.confidence_threshold = d['m'], d['le'], d['re'], d['c']; self.loaded=True

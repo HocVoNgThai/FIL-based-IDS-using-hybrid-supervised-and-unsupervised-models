@@ -77,7 +77,7 @@ print(f"[{APP_NAME}] JAVACMD đã được xác định: {JAVACMD}")
 
 # APP_ARGS: List[str] = sys.argv[1:]
 # if len(APP_ARGS) <0:
-APP_ARGS = ["-i", settings.NET_INTF, "fto", f"{settings.FTO}"]
+APP_ARGS = ["-i", settings.NET_INTF, "-fto", f"{settings.FTO}", "-ato" , f"{settings.ATO}"] #"-o", f"{settings.ALERTS_DIR.resolve()}"
 
 JAVA_OPTS = os.environ.get('JAVA_OPTS', '').split()     #"--enable-native-access=ALL-UNNAMED", os.environ.get('JAVA_OPTS', '').split()
 CIC_FLOW_METER_OPTS = os.environ.get('CIC_FLOW_METER_OPTS', '').split()

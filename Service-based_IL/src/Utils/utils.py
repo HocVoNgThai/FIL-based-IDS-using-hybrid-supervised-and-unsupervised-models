@@ -243,20 +243,20 @@ def analyze_and_plot_class_details(y_true, y_pred, title, save_dir, merge_labels
     y_pred_mapped = list(y_pred)
     
     if merge_labels_list:
-        y_true_mapped = ["UNKNOWN" if lbl in merge_labels_list else lbl for lbl in y_true_mapped]
-        y_pred_mapped = ["UNKNOWN" if lbl in merge_labels_list else lbl for lbl in y_pred_mapped]
+        y_true_mapped = ["Unknown" if lbl in merge_labels_list else lbl for lbl in y_true_mapped]
+        y_pred_mapped = ["Unknown" if lbl in merge_labels_list else lbl for lbl in y_pred_mapped]
 
     # 2. Danh sách nhãn
     all_labels = sorted(list(set(y_true_mapped) | set(y_pred_mapped)))
     
     # 3. Lọc hiển thị
     labels_to_show = set(all_labels)
-    if hide_unknown and "UNKNOWN" in labels_to_show:
-        labels_to_show.remove("UNKNOWN")
+    if hide_unknown and "Unknown" in labels_to_show:
+        labels_to_show.remove("Unknown")
         
-    ordered = [l for l in all_labels if l in labels_to_show and l != "BENIGN" and l != "UNKNOWN"]
-    if "BENIGN" in labels_to_show: ordered.insert(0, "BENIGN")
-    if "UNKNOWN" in labels_to_show: ordered.append("UNKNOWN")
+    ordered = [l for l in all_labels if l in labels_to_show and l != "Benign" and l != "Unknown"]
+    if "Benign" in labels_to_show: ordered.insert(0, "Benign")
+    if "Unknown" in labels_to_show: ordered.append("Unknown")
     
     if not ordered: return
 
@@ -331,13 +331,13 @@ def analyze_and_plot_class_details(y_true, y_pred, title, save_dir, merge_labels
         for rect in rects:
             if rect.get_height() > 0.01:
                 ax_bar.text(rect.get_x() + rect.get_width()/2., rect.get_height() + 0.01, 
-                            f"{rect.get_height():.2f}", ha='center', va='bottom', 
-                            fontsize=9)
+                            f"{rect.get_height():.4f}", ha='center', va='bottom', 
+                            fontsize=9, fontweight= 'bold')
 
     ax_bar.set_title(f"Per-Class Performance Metrics: {title}", fontweight='bold', fontsize=14)
     ax_bar.set_xticks(x); ax_bar.set_xticklabels(ordered, rotation=0, fontsize=11, fontweight='bold')
-    ax_bar.set_ylabel("Score"); ax_bar.set_ylim(0, 1.25)
-    ax_bar.legend(loc='lower right', ncol=4); ax_bar.grid(axis='y', alpha=0.3)
+    ax_bar.set_ylabel("Score"); ax_bar.set_ylim(0, 1.1)
+    ax_bar.legend(loc='upper right', ncol=4); ax_bar.grid(axis='y', alpha=0.3)
     
     plt.tight_layout()
     plt.savefig(f"{save_dir}/chart_per_class_{title.lower().replace(' ', '_')}.png", dpi=300)
@@ -485,13 +485,13 @@ class SessionManager:
 def get_label_name(y):
     try: val = int(y)
     except: return str(y)
-    return {0: "BENIGN", 1: "DDoS", 2: "DoS", 3: "Reconn", 4: "MITM", 5: "DNS Spoofing"}.get(val, "UNKNOWN")
+    return {0: "Benign", 1: "DDoS", 2: "DoS", 3: "Reconnaisance", 4: "MITM_ArpSpoofing", 5: "DNS_Spoofing"}.get(val, "Unknown")
 
 def plot_cm(y_true, y_pred, title, save_path):
     labels = sorted(list(set(y_true) | set(y_pred)))
-    ordered = [l for l in labels if l != "BENIGN" and l != "UNKNOWN"]
-    if "BENIGN" in labels: ordered.insert(0, "BENIGN")
-    if "UNKNOWN" in labels: ordered.append("UNKNOWN")
+    ordered = [l for l in labels if l != "Benign" and l != "Unknown"]
+    if "Benign" in labels: ordered.insert(0, "Benign")
+    if "Unknown" in labels: ordered.append("Unknown")
     cm = confusion_matrix(y_true, y_pred, labels=ordered)
     with np.errstate(divide='ignore', invalid='ignore'):
         cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
@@ -515,9 +515,9 @@ def plot_unknown_binary_cm(y_true, preds, unknown_label, save_path, session_name
     y_true = np.array(y_true); preds = np.array(preds)
     if isinstance(unknown_label, list): is_actual = np.isin(y_true, unknown_label).astype(int); label_text = f"List {unknown_label}"
     else: is_actual = (y_true == unknown_label).astype(int); label_text = get_label_name(unknown_label)
-    y_bin_pred = (preds == "UNKNOWN").astype(int)
+    y_bin_pred = (preds == "Unknown").astype(int)
     cm = confusion_matrix(is_actual, y_bin_pred)
-    print(f"\n{'-'*40}\n  UNKNOWN DETECTION TABLE: {label_text}\n{'-'*40}")
+    print(f"\n{'-'*40}\n  Unknown DETECTION TABLE: {label_text}\n{'-'*40}")
     try:
         print(f"True OTHER | {cm[0,0]:<6} | {cm[0,1]:<6} (Pred UNK)")
         print(f"True UNK   | {cm[1,0]:<6} | {cm[1,1]:<6} (Pred UNK)")
@@ -538,6 +538,7 @@ def plot_metrics_bar(report_dict, title, save_path):
     plt.figure(figsize=(8, 6))
     bars = plt.bar(metrics, values, color=['#3498db', '#2ecc71', '#e74c3c'])
     for bar in bars: plt.text(bar.get_x() + bar.get_width()/2., bar.get_height(), f'{bar.get_height():.4f}', ha='center', va='bottom')
+    plt.legend(bars, metrics, loc='upper right', frameon=True, shadow=True)
     plt.title(title); plt.ylim(0, 1.1); plt.ylabel('Score'); plt.tight_layout()
     os.makedirs(os.path.dirname(save_path), exist_ok=True); plt.savefig(save_path); plt.close()
 
@@ -545,26 +546,26 @@ def calculate_unknown_metrics(y_true, preds, unknown_label, save_dir, session_na
     y_true = np.array(y_true); preds = np.array(preds)
     if isinstance(unknown_label, list): is_actual = np.isin(y_true, unknown_label).astype(int); label_text = f"List {unknown_label}"
     else: is_actual = (y_true == unknown_label).astype(int); label_text = get_label_name(unknown_label)
-    y_bin_pred = (preds == "UNKNOWN").astype(int)
+    y_bin_pred = (preds == "Unknown").astype(int)
     plot_unknown_binary_cm(y_true, preds, unknown_label, f"{save_dir}/unknown_cm_{session_name}.png", session_name)
     return {'precision': precision_score(is_actual, y_bin_pred, zero_division=0), 'recall': recall_score(is_actual, y_bin_pred, zero_division=0), 'f1': f1_score(is_actual, y_bin_pred, zero_division=0)}
 
 def evaluate_supervised_with_unknown(y_true, y_pred, y_conf, atk_thres=0.7, ben_thres=0.7, session_name="", save_dir="", model_name="XGBoost", target_unknown=None):
     print(f"\n--- [METRICS] {model_name} Dual-Thres (Atk>={atk_thres}, Ben>={ben_thres}) - {session_name} ---")
     def map_label(y):
-        if isinstance(target_unknown, list): return "UNKNOWN" if y in target_unknown else get_label_name(y)
-        elif target_unknown is not None: return "UNKNOWN" if y == target_unknown else get_label_name(y)
+        if isinstance(target_unknown, list): return "Unknown" if y in target_unknown else get_label_name(y)
+        elif target_unknown is not None: return "Unknown" if y == target_unknown else get_label_name(y)
         return get_label_name(y)
     y_str_true = [map_label(y) for y in y_true]; y_str_pred = []; stats = {"unk_atk": 0, "unk_ben": 0}
     for p, c in zip(y_pred, y_conf):
         p_val = int(p)
         if p_val != 0:
-            if c < atk_thres: y_str_pred.append("UNKNOWN"); stats["unk_atk"] += 1
+            if c < atk_thres: y_str_pred.append("Unknown"); stats["unk_atk"] += 1
             else: y_str_pred.append(get_label_name(p_val))
         else:
-            if c < ben_thres: y_str_pred.append("UNKNOWN"); stats["unk_ben"] += 1
-            else: y_str_pred.append("BENIGN")
-    print(f"   -> XGBoost flagged UNKNOWN: {stats['unk_atk']} (Low Conf Atk) + {stats['unk_ben']} (Low Conf Ben)")
+            if c < ben_thres: y_str_pred.append("Unknown"); stats["unk_ben"] += 1
+            else: y_str_pred.append("Benign")
+    print(f"   -> XGBoost flagged Unknown: {stats['unk_atk']} (Low Conf Atk) + {stats['unk_ben']} (Low Conf Ben)")
     print(classification_report(y_str_true, y_str_pred, digits=4, zero_division=0))
     plot_cm(y_str_true, y_str_pred, f"CM {model_name} (Unknown) - {session_name}", f"{save_dir}/cm_{model_name}_unknown_{session_name}.png")
     rep = classification_report(y_str_true, y_str_pred, output_dict=True, zero_division=0)
@@ -581,13 +582,17 @@ def evaluate_supervised_model(y_true, y_pred, session_name, save_dir, model_name
     return rep
 
 def evaluate_final_pipeline(y_true, y_pred, sess, save_dir, return_f1=False, map_new_to_unknown=None):
-    print(f"\n--- [METRICS] Final Pipeline - {sess} ---")
+    print(f"\n--- [METRICS] Final Pipeline --- {sess} ---")
     
     # Chuyển đổi y_true, y_pred sang String Label cơ bản (Chưa gộp)
     # Gộp sẽ được thực hiện bên trong hàm analyze_and_plot_class_details
-    y_str_true = [get_label_name(val) for val in y_true]
-    y_str_pred = [val if isinstance(val, str) else get_label_name(val) for val in y_pred]
-
+    y_str_true = []
+    if map_new_to_unknown is not None:
+        y_str_true = [ get_label_name(val) if val not in map_new_to_unknown else "Unknown" for val in y_true]
+    else:
+        y_str_true = [get_label_name(val) for val in y_true]
+    
+    y_str_pred = [ val if isinstance(val, str) else get_label_name(val) for val in y_pred ]
     # In report tổng quan
     print(classification_report(y_str_true, y_str_pred, digits=4, zero_division=0))
     
@@ -772,7 +777,7 @@ def plot_unknown_detection_comparison(results_data, save_path):
     rects2 = ax.bar(x + width/2, Scenario2_vals, width, label='Scenario 2 (Target: MITM/DNS)', color='#e74c3c')
 
     # Thêm nhãn, tiêu đề
-    ax.set_ylabel('Detection Rate (Recall of New Attacks as UNKNOWN)', fontweight='bold')
+    ax.set_ylabel('Detection Rate (Recall of New Attacks as Unknown)', fontweight='bold')
     ax.set_xlabel('Ablation Scenarios', fontweight='bold')
     ax.set_title('Unknown Threat Detection Comparison (Scenario 1 vs Scenario 2)', fontsize=14, fontweight='bold')
     ax.set_xticks(x)

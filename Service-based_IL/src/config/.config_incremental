@@ -13,4 +13,4 @@ max_depth=6
 trees_per_step=20
 replay_buffer_size=5000
 replay_ratio=0.3
-enable_training=False
+enable_training=True

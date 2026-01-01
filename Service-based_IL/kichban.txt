@@ -1,0 +1,24 @@
+tạo peer 
+sudo ip link add veth0 type veth peer name veth1
+sudo ip link set veth0 up
+sudo ip link set veth1 up
+sudo ip addr add 192.168.0.1/24 dev veth0
+sudo ip addr add 192.168.0.2/24 dev veth1
+sudo ip link set veth0 mtu 36000
+sudo ip link set veth1 mtu 36000
+
+
+# Dùng hping3 tăng dần tốc độ gửi gói 
+
+# Bên máy bị tấn công, đếm gói đến
+sudo tcpdump -i veth1 -nn | wc -l
+
+sudo timeout 20s hping3 --rand-source -S -p 80 -i u30 -q veth1
+
+
+
+
+# Excel
+
+=AVERAGE(B2:INDIRECT("B" & ROW() - 1))
+=AVERAGE(C2:INDIRECT("C" & ROW() - 1))

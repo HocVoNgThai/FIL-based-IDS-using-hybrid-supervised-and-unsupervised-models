@@ -1,6 +1,7 @@
 package cic.cs.unb.ca.jnetpcap;
 
 import java.util.Arrays;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.jnetpcap.packet.format.FormatUtils;
 
@@ -17,8 +18,12 @@ public class BasicPacketInfo {
     private    long   payloadBytes;
     private    String  flowId = null;  
 	// new
+	private    int intsrcIp;
+	private    int intdstIp;
 	private	   String fwdFID = null;
 	private    String bwdFID = null;
+	// private    String preFlowId;
+	private    boolean forward = true;
 /* ******************************************** */    
     private    boolean flagFIN = false;
 	private    boolean flagPSH = false;
@@ -42,6 +47,9 @@ public class BasicPacketInfo {
 		this.dstPort = dstPort;
 		this.protocol = protocol;
 		this.timeStamp = timeStamp;
+		this.intsrcIp =IpToIpv4Int(this.src);
+		this.intdstIp = IpToIpv4Int(this.dst);
+
 		generateFlowId();
 	}
 	
@@ -51,32 +59,68 @@ public class BasicPacketInfo {
 	}
     
     
+	private int IpToIpv4Int(byte[] ip ){
+		return ((ip[0] & 0xFF) << 24) |
+               ((ip[1] & 0xFF) << 16) |
+               ((ip[2] & 0xFF) << 8)  |
+               ((ip[3] & 0xFF));
+	}
 
-	public String generateFlowId(){
-    	boolean forward = true;
-    	
-    	for(int i=0; i<this.src.length;i++){           
-    		if(((Byte)(this.src[i])).intValue() != ((Byte)(this.dst[i])).intValue()){
-    			if(((Byte)(this.src[i])).intValue() >((Byte)(this.dst[i])).intValue()){
-    				forward = false;
-    			}
-    			i=this.src.length;
-    		}
-    	}     	
-    	
-		int index = (int) this.id % 10000;
-		this.fwdFID = this.getSourceIP() + "-" + this.getDestinationIP() + "-" + this.srcPort  + "-" + this.dstPort  + "-" + this.protocol+ "-" +index;
-		this.bwdFID = this.getDestinationIP() + "-" + this.getSourceIP() + "-" + this.dstPort  + "-" + this.srcPort  + "-" + this.protocol+ "-" +index;
+	private String hashFlowId(int srcIp, int dstIp, int srcPort, int dstPort, int protocol) { //,int index
 
-        if(forward){
-			// this.flowId = this.getSourceIP() + "-" + this.getDestinationIP() + "-" + this.srcPort  + "-" + this.dstPort  + "-" + this.protocol;
-            this.flowId = this.fwdFID;
+        // Bước 1: Gom dữ liệu vào 2 biến long (không làm mất bit nào)
 
-        }else{
-			// this.flowId = this.getDestinationIP() + "-" + this.getSourceIP() + "-" + this.dstPort  + "-" + this.srcPort  + "-" + this.protocol;
-			this.flowId = this.bwdFID;
-        
+        long part1 = ((long) srcIp << 32) | (dstIp & 0xFFFFFFFFL);
+
+        long part2 = ((long) srcPort << 48) | ((long) dstPort << 32) | ((long) protocol << 16); // | (index & 0xFFFFL);
+
+       
+
+        // Bước 2: Trộn bit (Mixer) - Sử dụng thuật toán MurmurHash3 đơn giản hóa
+
+        long h = part1 ^ part2 ^ timeStamp;
+
+        h ^= h >>> 33;
+
+        h *= 0xff51afd7ed558ccdL; // Hằng số giúp khuếch tán bit
+
+        h ^= h >>> 33;
+
+        h *= 0xc4ceb9fe1a85ec53L;
+
+        h ^= h >>> 33;
+
+        return Long.toHexString(h); // Trả về lon
+	}
+
+	public String generateFlowId(){    
+		// if (Integer.compareUnsigned(this.intsrcIp, this.intdstIp) > 0) {
+    	// 	forward = false;
+		// }	
+		this.fwdFID  = this.hashFlowId(this.intsrcIp, this.intdstIp, this.srcPort, this.dstPort, this.protocol);
+		this.bwdFID  = this.hashFlowId(this.intdstIp, this.intsrcIp, this.dstPort, this.srcPort, this.protocol);
+		
+		// for(int i=0; i<this.src.length;i++){           
+    	// 	if(((Byte)(this.src[i])).intValue() != ((Byte)(this.dst[i])).intValue()){
+    	// 		if(((Byte)(this.src[i])).intValue() >((Byte)(this.dst[i])).intValue()){
+    	// 			this.forward = false;
+    	// 		}
+    	// 		i=this.src.length;
+    	// 	}
+    	// }  
+		
+		if (Integer.compareUnsigned(this.intsrcIp, this.intdstIp) > 0) {
+    		this.forward = false;
 		}
+
+		this.flowId = this.bwdFID;
+        
+		if(this.forward){
+			this.flowId =  this.fwdFID;
+			// this.flowId = this.getSourceIP() + "-" + this.getDestinationIP() + "-" + this.srcPort  + "-" + this.dstPort  + "-" + this.protocol;
+            return this.flowId;
+        }
+
         return this.flowId;
 	}
 
@@ -87,7 +131,7 @@ public class BasicPacketInfo {
 	
 	public String bwdFlowId() {
 		// this.flowId = this.getDestinationIP() + "-" + this.getSourceIP() + "-" + this.dstPort  + "-" + this.srcPort  + "-" + this.protocol;
-		return this.bwdFID; // this.flowId;
+		return this.bwdFID;
 	}
     
 	public String dumpInfo() {
@@ -96,7 +140,6 @@ public class BasicPacketInfo {
 	public int getPayloadPacket() {
 		return payloadPacket+=1;
 	}
-          
     
     public String getSourceIP(){
     	return FormatUtils.ip(this.src);

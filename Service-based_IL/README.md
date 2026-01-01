@@ -104,3 +104,384 @@ pip list --format=freeze > requirements.txt
 sed -i 's/\r$//' install_service.sh
 > Sợ thì tạo backup
 sed -i.bak 's/\r$//' install_service.sh
+
+
+
+sudo ip link add veth0 type veth peer name veth1
+sudo ip link set veth0 up
+sudo ip link set veth1 up
+
+
+ip link show veth0
+ip link show veth1
+
+tcpreplay -i eth0 attack.pcap
+
+sudo tcpreplay -i veth0 --tcpedit \
+  --enet-smac=d6:fb:b3:48:3d:79 \
+  --enet-dmac=ff:ff:ff:ff:ff:ff \
+  Recon_HostDiscovery.pcap
+
+tcpreplay -i veth0 --topspeed Recon-HostDiscovery.pcap
+
+tcpreplay -i veth0 --mbps=50 Recon-HostDiscovery.pcap
+
+tcpreplay -i veth0 --mtu-trunc --topspeed Recon-HostDiscovery.pcap
+
+
+sudo ip link set veth0 mtu 36000
+sudo ip link set veth1 mtu 36000
+
+🟢 Test IDS rule-based
+tcpreplay -i veth0 \
+  --pps=3000 \
+  --stats=10 \
+  Recon-fixed.pcap
+
+🟢 Test ML-based IDS
+tcpreplay -i veth0 \
+  --pps=1000 \
+  --stats=10 \
+  Recon-fixed.pcap
+
+sudo  tcpreplay -i veth1 \
+  --pps=33000 \
+  --stats=10 \
+ DDoS-ICMP_Flood.pcap
+
+sudo tcpreplay --pps=33000 --loop=0 --limit=1000000 -i veth1  DDoS-ICMP_Flood.pcap
+
+  tcpreplay -i veth1 \
+  --pps=1000 \
+  --stats=10 \
+  Recon-fixed.pcap
+
+🔴 Stress test
+tcpreplay -i veth0 \
+  --pps=20000 \
+  --stats=5 \
+  Recon-fixed.pcap
+
+cp -r ./src /opt/incremental_ids
+cp -r systemd_service_file/* /etc/systemd/system
+systemctl daemon-reexec
+systemctl daemon-reload
+systemctl enable ids_il.timer
+systemctl start ids_il.timer
+
+
+
+thử DDoS với số lượng mẫu khác nhau
+tài nguyên, thời gian, phản hồi, biểu đồ
+So sánh kịch bản
+
+thêm chữ dưới Scenario, chỉnh sủa hình
+
+
+video demo
+slide 15, chi tiết, hight light animation
+
+vẽ lại biểu đồ workflow sys ids
+
+ICON
+⟳
+✔
+⟳✔⏱︎⏲︎
+
+
+
+
+
+Linux/Mac:
+bash
+# Phương pháp 1: jps (Java Virtual Machine Process Status Tool)
+jps -l
+# Output: 12345 com.example.MyApp
+
+# Phương pháp 2: ps + grep
+ps aux | grep java
+ps -ef | grep java
+
+# Phương pháp 3: pgrep
+pgrep -f java
+pgrep -f MyApp
+Windows:
+bash
+# Command Prompt
+jps -l
+tasklist | findstr java
+
+# PowerShell
+Get-Process java
+Get-Process | Where-Object {$_.ProcessName -like "*java*"}
+2. JStack - Tool mạnh nhất để phân tích thread
+bash
+# Lấy thread dump
+jstack <pid> > thread_dump.txt
+
+# Lấy multiple dumps để phân tích
+for i in {1..5}; do jstack <pid> > thread_dump_$i.txt; sleep 2; done
+
+# Với container Docker
+docker exec <container_id> jstack <pid> > thread_dump.txt
+3. JConsole - GUI Monitoring
+bash
+# Start jconsole
+jconsole <pid>
+
+# Hoặc remote
+jconsole hostname:port
+4. VisualVM - Advanced Profiling
+bash
+# Download từ https://visualvm.github.io/
+# Attach vào process
+jvisualvm
+5. Java Mission Control (JMC) - Production Grade
+bash
+# JDK 11+ (cần download riêng)
+jmc
+6. Shell script tự động phát hiện deadlock
+bash
+#!/bin/bash
+# find_java_deadlocks.sh
+
+PID=$1
+OUTPUT_FILE="thread_analysis_$(date +%Y%m%d_%H%M%S).txt"
+
+echo "=== Monitoring Java PID: $PID ===" | tee $OUTPUT_FILE
+
+# Lấy 5 thread dump cách nhau 3 giây
+for i in {1..5}; do
+    echo -e "\n--- Thread Dump #$i at $(date) ---" | tee -a $OUTPUT_FILE
+    jstack $PID | tee -a $OUTPUT_FILE
+    
+    # Kiểm tra deadlock
+    DEADLOCK_COUNT=$(jstack $PID | grep -c "deadlock")
+    if [ $DEADLOCK_COUNT -gt 0 ]; then
+        echo "⚠️  DEADLOCK DETECTED! Count: $DEADLOCK_COUNT" | tee -a $OUTPUT_FILE
+        jstack $PID | grep -A 20 "deadlock" | tee -a $OUTPUT_FILE
+    fi
+    
+    # Kiểm tra blocked threads
+    BLOCKED_COUNT=$(jstack $PID | grep -c "BLOCKED")
+    echo "Blocked threads: $BLOCKED_COUNT" | tee -a $OUTPUT_FILE
+    
+    if [ $i -lt 5 ]; then
+        sleep 3
+    fi
+done
+
+# Phân tích top CPU threads
+echo -e "\n=== Top CPU-consuming threads ===" | tee -a $OUTPUT_FILE
+top -H -b -n 1 -p $PID | head -20 | tee -a $OUTPUT_FILE
+7. Sử dụng Java API để detect programmatically
+java
+import java.lang.management.*;
+import java.util.*;
+
+public class ThreadMonitor {
+    
+    public static void monitorThreads() {
+        ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
+        
+        // 1. Kiểm tra deadlock
+        long[] deadlockedThreads = threadBean.findDeadlockedThreads();
+        if (deadlockedThreads != null && deadlockedThreads.length > 0) {
+            System.err.println("Deadlock detected!");
+            for (long threadId : deadlockedThreads) {
+                ThreadInfo info = threadBean.getThreadInfo(threadId);
+                System.err.println("Deadlocked thread: " + info.getThreadName());
+                System.err.println("Lock: " + info.getLockName());
+                System.err.println("Lock owner: " + info.getLockOwnerName());
+            }
+        }
+        
+        // 2. Lấy tất cả threads
+        ThreadInfo[] allThreads = threadBean.dumpAllThreads(true, true);
+        
+        // 3. Tìm blocked threads
+        List<ThreadInfo> blockedThreads = new ArrayList<>();
+        for (ThreadInfo thread : allThreads) {
+            if (thread.getThreadState() == Thread.State.BLOCKED) {
+                blockedThreads.add(thread);
+            }
+        }
+        
+        if (!blockedThreads.isEmpty()) {
+            System.out.println("\n=== BLOCKED THREADS ===");
+            for (ThreadInfo thread : blockedThreads) {
+                printThreadInfo(thread);
+            }
+        }
+        
+        // 4. CPU time per thread
+        System.out.println("\n=== THREAD CPU TIME ===");
+        for (ThreadInfo thread : allThreads) {
+            long cpuTime = threadBean.getThreadCpuTime(thread.getThreadId());
+            long userTime = threadBean.getThreadUserTime(thread.getThreadId());
+            if (cpuTime > 1000000000L) { // > 1 second
+                System.out.printf("%s - CPU: %.2fs, User: %.2fs\n",
+                    thread.getThreadName(),
+                    cpuTime / 1e9,
+                    userTime / 1e9);
+            }
+        }
+    }
+    
+    private static void printThreadInfo(ThreadInfo thread) {
+        System.out.println("Thread: " + thread.getThreadName());
+        System.out.println("State: " + thread.getThreadState());
+        System.out.println("Blocked on: " + thread.getLockName());
+        System.out.println("Blocked by: " + thread.getLockOwnerName());
+        System.out.println("Stack trace:");
+        for (StackTraceElement element : thread.getStackTrace()) {
+            System.out.println("  " + element);
+        }
+        System.out.println();
+    }
+    
+    // Scheduled monitoring
+    public static void startMonitoring(int intervalSeconds) {
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.scheduleAtFixedRate(
+            ThreadMonitor::monitorThreads,
+            0, intervalSeconds, TimeUnit.SECONDS
+        );
+    }
+}
+8. Arthas - Tool mạnh nhất cho production
+bash
+# Start Arthas
+java -jar arthas-boot.jar
+
+# Attach vào process
+[arthas@1]$ dashboard  # Real-time dashboard
+[arthas@1]$ thread     # List all threads
+[arthas@1]$ thread -n 3  # Top 3 busy threads
+[arthas@1]$ thread -b    # Find blocked threads
+[arthas@1]$ thread <tid> # Check specific thread
+[arthas@1]$ thread --state BLOCKED  # Filter by state
+9. Perf - Linux Performance Analysis
+bash
+# Lấy flame graph cho Java
+git clone https://github.com/brendangregg/FlameGraph.git
+
+# Profiling với perf
+perf record -F 99 -p <pid> -g -- sleep 30
+perf script | ./FlameGraph/stackcollapse-perf.pl | ./FlameGraph/flamegraph.pl > flame.svg
+10. Async-Profiler
+bash
+# Download từ https://github.com/jvm-profiling-tools/async-profiler
+
+# CPU profiling
+./profiler.sh -d 30 -f profile.svg <pid>
+
+# Allocation profiling
+./profiler.sh -d 30 -e alloc -f alloc.svg <pid>
+
+# Lock profiling
+./profiler.sh -d 30 -e lock -f lock.svg <pid>
+11. Đọc và phân tích thread dump
+Pattern phát hiện vấn đề:
+Deadlock pattern:
+
+text
+Found one Java-level deadlock:
+"Thread-1":
+  waiting to lock monitor 0x00007f8b4800a2b8 (object 0x00000000ff1e8d70, a java.lang.Object),
+  which is held by "Thread-2"
+"Thread-2":
+  waiting to lock monitor 0x00007f8b4800a2c8 (object 0x00000000ff1e8d80, a java.lang.Object),
+  which is held by "Thread-1"
+Blocked thread pattern:
+
+text
+"pool-1-thread-3" #17 prio=5 os_prio=0 tid=0x00007f8b4c0c3000 nid=0x4e3f waiting for monitor entry [0x00007f8b2a7f1000]
+   java.lang.Thread.State: BLOCKED (on object monitor)
+   at com.example.Resource.process()
+   - waiting to lock <0x00000000ff1e8d70> (a com.example.Resource)
+High CPU thread pattern:
+
+text
+"VM Thread" os_prio=0 tid=0x00007f8b4800a000 nid=0x4e38 runnable
+12. Script tự động hóa monitoring
+bash
+#!/bin/bash
+# auto_thread_monitor.sh
+
+if [ -z "$1" ]; then
+    echo "Usage: $0 <java_process_name>"
+    exit 1
+fi
+
+PROCESS_NAME=$1
+PID=$(jps -l | grep "$PROCESS_NAME" | awk '{print $1}')
+
+if [ -z "$PID" ]; then
+    echo "Process $PROCESS_NAME not found"
+    exit 1
+fi
+
+echo "Monitoring PID: $PID"
+
+# Continuous monitoring
+while true; do
+    TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+    
+    # Check blocked threads
+    BLOCKED_COUNT=$(jstack $PID | grep "java.lang.Thread.State: BLOCKED" | wc -l)
+    
+    if [ $BLOCKED_COUNT -gt 0 ]; then
+        echo "[$TIMESTAMP] ⚠️  $BLOCKED_COUNT blocked threads detected"
+        
+        # Take thread dump
+        jstack $PID > thread_dump_$(date +%s).txt
+        
+        # Get top CPU threads
+        top -H -b -n 1 -p $PID | grep -A 10 "PID" > cpu_usage_$(date +%s).txt
+    fi
+    
+    sleep 10
+done
+Các công cụ khuyên dùng:
+Development/Testing: VisualVM, JConsole
+
+Production Diagnostics: Arthas, Async-Profiler
+
+Deep Analysis: JMC, thread dump analysis
+
+Performance Benchmark: JMH + Async-Profiler
+
+Quick Checklist khi thread bị nghẽn:
+jps -l → Tìm PID
+
+top -H -p <pid> → Thread nào CPU cao
+
+jstack <pid> → Tìm BLOCKED/WAITING threads
+
+jstack <pid> | grep -A 30 "deadlock" → Check deadlock
+
+arthas → Real-time analysis
+
+Tùy vào môi trường (dev/prod) và quyền truy cập mà chọn tool phù hợp!
+
+
+# KỊCH BẢN
+
+# Tạo cặp veth0 và veth1 (tự động kết nối với nhau)
+sudo ip link add veth0 type veth peer name veth1
+
+# Đưa cả 2 interface lên
+sudo ip link set veth0 up
+sudo ip link set veth1 up
+
+# Gán IP để test ping
+sudo ip addr add 192.168.0.1/24 dev veth0
+sudo ip addr add 192.168.0.2/24 dev veth1
+
+# Kiểm tra
+ip addr show veth0
+ip addr show veth1
+
+
+sudo hping3 --rand-source -c 100000 -i u300 -q 10.0.0.2

@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     
     #ARGS CICEXTRACT
     NET_INTF: str = "eth0"
-    FTO: int = "1000"
+    FTO: int = "1000" # 1000000
     ATO: int = "120000000"
     
     REFRESH_INTERVAL: int = 60

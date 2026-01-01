@@ -4,6 +4,8 @@ joblib==1.5.1
 matplotlib==3.9.2
 numpy==1.26.1
 pandas==2.3.2
+pillow==11.1.0
+plotly==6.5.0
 psutil==7.0.0
 pydantic==2.12.5
 pydantic-settings==2.12.0
